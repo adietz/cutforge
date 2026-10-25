@@ -2,16 +2,20 @@
 
 Cross-platform desktop vector design app for **laser cutting / engraving** and **Silhouette** machines (Cameo and friends). Built with **Tauri 2 + React + TypeScript + Paper.js**.
 
-## Features (v0.1 scaffold)
+## Features (v0.2)
 
-- Dark UI: toolbar · canvas · inspector
+- Dark UI: toolbar · rulers · canvas · inspector · layers
 - Page presets: Letter, A4, Silhouette Cameo 4 (12×12 in), Cameo 4 Plus (15×15 in), custom
-- Units: mm / in
+- Units: mm / in with live cursor readout
 - Tools: select, rectangle, ellipse, line, polygon, freehand, text
-- Selection: move, resize handles, rotate, delete, duplicate
-- Cut types: **Cut** · **Score** · **Engrave** (visual stroke/fill conventions)
-- Import SVG · Export SVG (Silhouette-friendly) · Export DXF (laser, mm)
-- Zoom (wheel), pan (hold Space + drag), page grid
+- Selection: marquee, Shift-click toggle, move / resize / rotate, delete, duplicate
+- Align / distribute for multi-selection
+- **Undo / redo** history (draw, transform, style, delete, duplicate, import, layer ops)
+- Layers panel: visibility, lock, rename, reorder
+- Cut types: **Cut** · **Score** · **Engrave**
+- **Hairline (0.001 in)** stroke for Silhouette SVG export
+- Import SVG · Export SVG · Export DXF (laser, mm)
+- Zoom (wheel), pan (Space+drag), page grid, Help cheatsheet (`?`)
 
 ## Requirements
 
@@ -24,15 +28,11 @@ Cross-platform desktop vector design app for **laser cutting / engraving** and *
 
 ## Quick start (web UI)
 
-Useful for UI work without compiling the native shell:
-
 ```bash
 cd cutforge
 npm install
 npm run dev
 ```
-
-Open the URL Vite prints (default http://localhost:5173).
 
 ## Desktop app (Tauri)
 
@@ -48,9 +48,9 @@ Production installers:
 npm run tauri:build
 ```
 
-Artifacts land under `src-tauri/target/release/bundle/` (`.dmg` / `.msi` / `.AppImage` etc. depending on host OS).
+Artifacts under `src-tauri/target/release/bundle/`.
 
-## Shortcuts
+## Keyboard shortcuts
 
 | Key | Action |
 |-----|--------|
@@ -61,32 +61,40 @@ Artifacts land under `src-tauri/target/release/bundle/` (`.dmg` / `.msi` / `.App
 | P | Polygon (Enter / double-click to close) |
 | F | Freehand |
 | T | Text |
+| Drag empty canvas | Marquee multi-select |
+| Shift+click | Add/remove from selection |
 | Space+drag | Pan |
 | Wheel | Zoom |
-| Delete | Delete selection |
+| Delete / Backspace | Delete selection |
 | Ctrl/Cmd+D | Duplicate |
+| Ctrl/Cmd+Z | Undo |
+| Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y | Redo |
 | Esc | Cancel polygon / back to select |
+| ? | Shortcuts cheatsheet |
+
+Also available from **Help** in the top bar.
 
 ## Export notes
 
-- **SVG**: page-sized `viewBox`, mm or in units, `data-cut-type` on paths — open in Silhouette Studio or send to laser software that accepts SVG.
-- **DXF**: ASCII LWPOLYLINE / TEXT on layers `CUT`, `SCORE`, `ENGRAVE`, units mm — typical for LightBurn, LaserGRBL, and many CO₂ controllers.
+- **SVG**: page-sized `viewBox`, mm or in units, `data-cut-type` on paths. Enable **Hairline (0.001 in)** for Silhouette Studio cut lines.
+- **DXF**: ASCII LWPOLYLINE / TEXT on layers `CUT`, `SCORE`, `ENGRAVE`, units mm — LightBurn, LaserGRBL, many CO₂ controllers.
 
 ## Project layout
 
 ```
 src/                 React UI + Paper.js editor
-src/canvas/          Editor engine
+src/canvas/          Editor engine + history
 src/export/          SVG + DXF writers
 src-tauri/           Tauri 2 / Rust shell
 ```
 
-## Next iterations
+## Remaining gaps (toward daily driver)
 
-- True multi-select marquee, align/distribute
-- Undo/redo stack
-- Layers panel + lock/hide
-- Hairline stroke mode for Silhouette
-- Direct USB / Send-to-Silhouette (machine SDK)
-- DXF ellipses/arcs without polyline sampling
-- Ruler chrome with live cursor readout
+- True boolean ops / path offset / nested cut holes
+- Snap to grid / guides / object edges
+- Persist `.cutforge` project files; autosave
+- Print-to-cut registration marks
+- Direct send to Silhouette / LightBurn
+- DXF arcs/ellipses without polyline sampling
+- Multi-page / multi-mat jobs
+- Better text-to-path for cutters that ignore fonts

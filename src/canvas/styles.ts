@@ -1,5 +1,6 @@
 import paper from 'paper'
 import type { CutType, DocStyle } from '../types'
+import { HAIRLINE_MM } from '../types'
 
 export const CUT_TYPE_DEFAULTS: Record<
   CutType,
@@ -43,15 +44,19 @@ export function applyCutTypeVisual(
 
   item.data.cutType = cutType
   if (style?.strokeWidthMm != null) item.data.strokeWidthMm = style.strokeWidthMm
+  if (style?.hairline != null) item.data.hairline = style.hairline
   if (style?.strokeColor) item.data.strokeColor = style.strokeColor
   if (style?.fillColor !== undefined) item.data.fillColor = style.fillColor
 }
 
 export function styleFromItem(item: paper.Item): DocStyle {
+  const mm = (item.data.strokeWidthMm as number) || 0.2
+  const hairline = !!(item.data.hairline) || Math.abs(mm - HAIRLINE_MM) < 1e-6
   return {
     strokeColor: (item.data.strokeColor as string) || '#e74c3c',
-    strokeWidthMm: (item.data.strokeWidthMm as number) || 0.2,
+    strokeWidthMm: mm,
     fillColor: (item.data.fillColor as string | null) ?? null,
     cutType: (item.data.cutType as CutType) || 'cut',
+    hairline,
   }
 }

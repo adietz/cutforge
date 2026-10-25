@@ -1,14 +1,14 @@
 import paper from 'paper'
-
-void paper
 import type { PagePreset } from '../types'
 import { PX_PER_MM } from '../types'
+
+void paper
 
 /**
  * Minimal ASCII DXF for laser cutters.
  * Coordinates in millimeters. Y flipped (CAD origin bottom-left).
  */
-export function exportDxf(project: paper.Project, page: PagePreset): string {
+export function exportDxf(items: paper.Item[], page: PagePreset): string {
   const h = page.heightMm
   const lines: string[] = []
 
@@ -50,8 +50,9 @@ export function exportDxf(project: paper.Project, page: PagePreset): string {
   push(0, 'SECTION')
   push(2, 'ENTITIES')
 
-  for (const item of project.activeLayer.children) {
-    if (item.data?.isGuide || item.data?.isHandle || item.data?.isPage) continue
+  const walk = (item: paper.Item) => {
+    if (!item.visible) return
+    if (item.data?.isGuide || item.data?.isHandle || item.data?.isPage) return
     const cutType = ((item.data?.cutType as string) || 'cut').toUpperCase()
     const layer =
       cutType === 'SCORE' ? 'SCORE' : cutType === 'ENGRAVE' ? 'ENGRAVE' : 'CUT'
@@ -72,8 +73,12 @@ export function exportDxf(project: paper.Project, page: PagePreset): string {
       push(20, round(y))
       push(40, round(Number(t.fontSize) / PX_PER_MM))
       push(1, t.content)
+    } else if (item.children?.length) {
+      for (const c of item.children) walk(c)
     }
   }
+
+  for (const item of items) walk(item)
 
   push(0, 'ENDSEC')
   push(0, 'EOF')

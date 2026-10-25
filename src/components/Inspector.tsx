@@ -1,6 +1,7 @@
 import { PAGE_PRESETS } from '../pagePresets'
-import type { CutType, DocStyle, PagePreset, Unit } from '../types'
-import { INCH_TO_MM } from '../types'
+import type { CutType, DocStyle, LayerInfo, PagePreset, Unit } from '../types'
+import { HAIRLINE_MM, INCH_TO_MM } from '../types'
+import { LayersPanel } from './LayersPanel'
 
 export function Inspector({
   unit,
@@ -8,6 +9,7 @@ export function Inspector({
   style,
   selectedCount,
   zoom,
+  layers,
   onUnit,
   onPage,
   onCustomSize,
@@ -16,12 +18,18 @@ export function Inspector({
   onDuplicate,
   onFit,
   onZoom,
+  onSelectLayer,
+  onToggleVisible,
+  onToggleLocked,
+  onRenameLayer,
+  onReorderLayer,
 }: {
   unit: Unit
   page: PagePreset
   style: DocStyle
   selectedCount: number
   zoom: number
+  layers: LayerInfo[]
   onUnit: (u: Unit) => void
   onPage: (id: string) => void
   onCustomSize: (w: number, h: number) => void
@@ -30,6 +38,11 @@ export function Inspector({
   onDuplicate: () => void
   onFit: () => void
   onZoom: (z: number) => void
+  onSelectLayer: (id: string, additive: boolean) => void
+  onToggleVisible: (id: string, visible: boolean) => void
+  onToggleLocked: (id: string, locked: boolean) => void
+  onRenameLayer: (id: string, name: string) => void
+  onReorderLayer: (id: string, dir: 'up' | 'down' | 'top' | 'bottom') => void
 }) {
   const toDisplay = (mm: number) =>
     unit === 'in' ? +(mm / INCH_TO_MM).toFixed(3) : +mm.toFixed(2)
@@ -40,10 +53,7 @@ export function Inspector({
       <h2>Document</h2>
       <label className="field">
         <span>Page</span>
-        <select
-          value={page.id}
-          onChange={(e) => onPage(e.target.value)}
-        >
+        <select value={page.id} onChange={(e) => onPage(e.target.value)}>
           {PAGE_PRESETS.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
@@ -135,14 +145,32 @@ export function Inspector({
         />
       </label>
 
+      <label className="check-field">
+        <input
+          type="checkbox"
+          checked={!!style.hairline}
+          onChange={(e) =>
+            onStyle(
+              e.target.checked
+                ? { hairline: true, strokeWidthMm: HAIRLINE_MM }
+                : { hairline: false, strokeWidthMm: 0.2 },
+            )
+          }
+        />
+        <span>Hairline (0.001 in) — Silhouette SVG</span>
+      </label>
+
       <label className="field">
         <span>Stroke width (mm)</span>
         <input
           type="number"
-          min={0.05}
-          step={0.05}
-          value={style.strokeWidthMm}
-          onChange={(e) => onStyle({ strokeWidthMm: +e.target.value })}
+          min={0.001}
+          step={0.001}
+          disabled={!!style.hairline}
+          value={+style.strokeWidthMm.toFixed(4)}
+          onChange={(e) =>
+            onStyle({ strokeWidthMm: +e.target.value, hairline: false })
+          }
         />
       </label>
 
@@ -170,17 +198,36 @@ export function Inspector({
 
       <h2>Selection</h2>
       <div className="row">
-        <button type="button" className="btn" onClick={onDuplicate} disabled={!selectedCount}>
+        <button
+          type="button"
+          className="btn"
+          onClick={onDuplicate}
+          disabled={!selectedCount}
+        >
           Duplicate
         </button>
-        <button type="button" className="btn danger" onClick={onDelete} disabled={!selectedCount}>
+        <button
+          type="button"
+          className="btn danger"
+          onClick={onDelete}
+          disabled={!selectedCount}
+        >
           Delete
         </button>
       </div>
 
+      <LayersPanel
+        layers={layers}
+        onSelect={onSelectLayer}
+        onToggleVisible={onToggleVisible}
+        onToggleLocked={onToggleLocked}
+        onRename={onRenameLayer}
+        onReorder={onReorderLayer}
+      />
+
       <p className="hint">
-        Cut = stroke only (Silhouette / laser cut). Score = dashed. Engrave = filled.
-        Export SVG for Silhouette Studio; DXF for most laser controllers.
+        Cut = stroke only. Score = dashed. Engrave = filled. Hairline SVG for
+        Silhouette Studio; DXF for laser controllers.
       </p>
     </aside>
   )

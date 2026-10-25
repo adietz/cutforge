@@ -1,17 +1,23 @@
 import paper from 'paper'
+import type { PagePreset, Unit } from '../types'
+import { HAIRLINE_IN, HAIRLINE_MM, INCH_TO_MM, PX_PER_MM } from '../types'
 
 void paper
-import type { PagePreset, Unit } from '../types'
-import { INCH_TO_MM, PX_PER_MM } from '../types'
+
+export interface SvgExportOptions {
+  /** Force Silhouette hairline (0.001 in) stroke on paths. */
+  hairline?: boolean
+}
 
 /**
  * Silhouette-friendly SVG: mm (or in) units, viewBox matching page,
  * paths as stroke/fill with cut-type data attributes.
  */
 export function exportSvg(
-  project: paper.Project,
+  items: paper.Item[],
   page: PagePreset,
   unit: Unit,
+  options: SvgExportOptions = {},
 ): string {
   const w = unit === 'in' ? page.widthMm / INCH_TO_MM : page.widthMm
   const h = unit === 'in' ? page.heightMm / INCH_TO_MM : page.heightMm
@@ -26,9 +32,10 @@ export function exportSvg(
 
   const scale = unit === 'in' ? 1 / (PX_PER_MM * INCH_TO_MM) : 1 / PX_PER_MM
 
-  for (const item of project.activeLayer.children) {
+  for (const item of items) {
+    if (!item.visible) continue
     if (item.data?.isGuide || item.data?.isHandle || item.data?.isPage) continue
-    const svgChunk = itemToSvg(item, scale)
+    const svgChunk = itemToSvg(item, scale, unit, options)
     if (svgChunk) parts.push(svgChunk)
   }
 
@@ -37,20 +44,35 @@ export function exportSvg(
 }
 
 function fmt(n: number): string {
-  return (Math.round(n * 1000) / 1000).toString()
+  return (Math.round(n * 100000) / 100000).toString()
 }
 
-function itemToSvg(item: paper.Item, scale: number): string | null {
+function itemToSvg(
+  item: paper.Item,
+  scale: number,
+  unit: Unit,
+  options: SvgExportOptions,
+): string | null {
   const cutType = (item.data?.cutType as string) || 'cut'
-  const strokeWMm = (item.data?.strokeWidthMm as number) || 0.2
-  const strokeW = scale === 1 / PX_PER_MM ? strokeWMm : strokeWMm / INCH_TO_MM
+  const useHairline =
+    options.hairline ||
+    !!item.data?.hairline ||
+    Math.abs(Number(item.data?.strokeWidthMm) - HAIRLINE_MM) < 1e-6
+
+  let strokeW: number
+  if (useHairline) {
+    strokeW = unit === 'in' ? HAIRLINE_IN : HAIRLINE_MM
+  } else {
+    const strokeWMm = (item.data?.strokeWidthMm as number) || 0.2
+    strokeW = unit === 'in' ? strokeWMm / INCH_TO_MM : strokeWMm
+  }
 
   if (item.className === 'PointText') {
     const t = item as paper.PointText
     const p = t.point
     const fill = colorStr(t.fillColor) || '#000'
     const escaped = escapeXml(t.content)
-    return `  <text x="${fmt(p.x * scale)}" y="${fmt(p.y * scale)}" font-size="${fmt(Number(t.fontSize) * scale)}" fill="${fill}" data-cut-type="${cutType}">${escaped}</text>`
+    return `  <text x="${fmt(p.x * scale)}" y="${fmt(p.y * scale)}" font-size="${fmt(Number(t.fontSize) * scale)}" fill="${fill}" data-cut-type="${cutType}" data-name="${escapeXml(String(item.data?.name || ''))}">${escaped}</text>`
   }
 
   if (item.className === 'Path' || item.className === 'CompoundPath') {
@@ -63,7 +85,16 @@ function itemToSvg(item: paper.Item, scale: number): string | null {
       path.dashArray && path.dashArray.length
         ? ` stroke-dasharray="${path.dashArray.map((x) => fmt(x * scale)).join(' ')}"`
         : ''
-    return `  <path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width="${fmt(strokeW)}"${dash} data-cut-type="${cutType}"/>`
+    const hair = useHairline ? ` data-hairline="true"` : ''
+    return `  <path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width="${fmt(strokeW)}"${dash} data-cut-type="${cutType}" data-name="${escapeXml(String(item.data?.name || ''))}"${hair}/>`
+  }
+
+  // Groups: export children
+  if (item.children?.length) {
+    return item.children
+      .map((c) => itemToSvg(c, scale, unit, options))
+      .filter(Boolean)
+      .join('\n')
   }
 
   return null

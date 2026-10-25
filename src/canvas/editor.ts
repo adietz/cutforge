@@ -1,30 +1,59 @@
 import paper from 'paper'
 import { applyCutTypeVisual, styleFromItem } from './styles'
-import type { CutType, DocStyle, PagePreset, Tool } from '../types'
-import { PX_PER_MM } from '../types'
+import { HistoryStack } from './history'
+import type {
+  AlignMode,
+  CursorInfo,
+  CutType,
+  DocStyle,
+  EditorSnapshot,
+  LayerInfo,
+  PagePreset,
+  Tool,
+} from '../types'
+import { HAIRLINE_MM, PX_PER_MM } from '../types'
 
-export type EditorListener = (info: {
-  selectedCount: number
-  style: DocStyle | null
-  zoom: number
-  status: string
-}) => void
+export type EditorListener = (info: EditorSnapshot) => void
 
 function isGuide(item: paper.Item | null | undefined): boolean {
   if (!item) return true
   return !!(item.data?.isGuide || item.data?.isHandle || item.data?.isPage)
 }
 
+let idSeq = 1
+function nextId() {
+  return `cf-${Date.now().toString(36)}-${idSeq++}`
+}
+
+function ensureMeta(item: paper.Item, fallbackName?: string) {
+  if (!item.data.cfId) item.data.cfId = nextId()
+  if (!item.data.name) {
+    item.data.name =
+      fallbackName ||
+      (item.className === 'PointText'
+        ? `Text ${(item as paper.PointText).content?.slice(0, 16) || ''}`.trim()
+        : item.className === 'Path'
+          ? 'Path'
+          : item.className || 'Object')
+  }
+  if (item.data.locked == null) item.data.locked = false
+}
+
 export class CutForgeEditor {
+  private guideLayer!: paper.Layer
+  private docLayer!: paper.Layer
+  private overlayLayer!: paper.Layer
   private pageRect: paper.Path | null = null
   private gridGroup: paper.Group | null = null
   private handleGroup: paper.Group | null = null
+  private marquee: paper.Path | null = null
   private tool: Tool = 'select'
   private style: DocStyle = {
     strokeColor: '#e74c3c',
     strokeWidthMm: 0.2,
     fillColor: null,
     cutType: 'cut',
+    hairline: false,
   }
   private page: PagePreset
   private paperTool: paper.Tool
@@ -32,24 +61,49 @@ export class CutForgeEditor {
   private polygonPoints: paper.Point[] = []
   private dragStart: paper.Point | null = null
   private selected: paper.Item[] = []
-  private mode: 'none' | 'move' | 'resize' | 'rotate' | 'draw' | 'pan' = 'none'
+  private mode:
+    | 'none'
+    | 'move'
+    | 'resize'
+    | 'rotate'
+    | 'draw'
+    | 'pan'
+    | 'marquee' = 'none'
   private transformOrigin: paper.Point | null = null
   private startRotation = 0
   private resizeCorner: string | null = null
   private startBounds: paper.Rectangle | null = null
-  private origScalings: { item: paper.Item; scaling: paper.Point; position: paper.Point }[] = []
+  private origScalings: {
+    item: paper.Item
+    scaling: paper.Point
+    position: paper.Point
+  }[] = []
   private spacePan = false
   private panStart: paper.Point | null = null
   private viewCenterStart: paper.Point | null = null
   private listeners: EditorListener[] = []
-  private status = 'Ready — V select · R rect · E ellipse · L line · P polygon · F freehand · T text'
+  private status =
+    'Ready — V select · drag empty = marquee · ⌘Z undo · ? help'
   private preview: paper.Path | null = null
   private canvas: HTMLCanvasElement
+  private history = new HistoryStack()
+  private gestureBefore: string | null = null
+  private cursor: CursorInfo | null = null
+  private nameCounters: Record<string, number> = {}
 
   constructor(canvas: HTMLCanvasElement, page: PagePreset) {
     this.canvas = canvas
     this.page = page
     paper.setup(canvas)
+    paper.project.clear()
+    this.guideLayer = new paper.Layer()
+    this.guideLayer.name = 'guides'
+    this.docLayer = new paper.Layer()
+    this.docLayer.name = 'document'
+    this.overlayLayer = new paper.Layer()
+    this.overlayLayer.name = 'overlay'
+    this.docLayer.activate()
+
     this.paperTool = new paper.Tool()
     this.wire()
     this.rebuildPage()
@@ -58,6 +112,7 @@ export class CutForgeEditor {
 
     canvas.addEventListener('wheel', this.onWheel, { passive: false })
     canvas.addEventListener('dblclick', this.onDblClick)
+    canvas.addEventListener('mousemove', this.onMouseMove)
     window.addEventListener('keydown', this.onKeyDown)
     window.addEventListener('keyup', this.onKeyUp)
   }
@@ -73,6 +128,7 @@ export class CutForgeEditor {
   destroy() {
     this.canvas.removeEventListener('wheel', this.onWheel)
     this.canvas.removeEventListener('dblclick', this.onDblClick)
+    this.canvas.removeEventListener('mousemove', this.onMouseMove)
     window.removeEventListener('keydown', this.onKeyDown)
     window.removeEventListener('keyup', this.onKeyUp)
     paper.project?.clear()
@@ -90,14 +146,39 @@ export class CutForgeEditor {
     return this.style
   }
 
+  getDocItems(): paper.Item[] {
+    return [...this.docLayer.children]
+  }
+
+  getView() {
+    return {
+      zoom: paper.view.zoom,
+      center: { x: paper.view.center.x, y: paper.view.center.y },
+      viewSize: {
+        width: paper.view.viewSize.width,
+        height: paper.view.viewSize.height,
+      },
+      bounds: paper.view.bounds,
+    }
+  }
+
+  viewToProject(x: number, y: number) {
+    return paper.view.viewToProject(new paper.Point(x, y))
+  }
+
+  setUnit(_unit: 'mm' | 'in') {
+    this.notify()
+  }
+
   setTool(tool: Tool) {
     this.tool = tool
     this.clearPreview()
+    this.clearMarquee()
     if (tool !== 'polygon') this.polygonPoints = []
     if (tool !== 'select') this.deselectAll()
     this.status =
       tool === 'select'
-        ? 'Select — drag move · corners resize · purple = rotate · Del delete · ⌘D duplicate'
+        ? 'Select — drag empty = marquee · Shift+click toggle · Del · ⌘D · ⌘Z'
         : tool === 'polygon'
           ? 'Polygon — click points, Enter or double-click to close'
           : `Drawing: ${tool}`
@@ -105,12 +186,21 @@ export class CutForgeEditor {
   }
 
   setStyle(partial: Partial<DocStyle>) {
+    const before =
+      this.selected.length > 0 ? this.snapshotDoc() : null
     this.style = { ...this.style, ...partial }
+    if (partial.hairline) {
+      this.style.strokeWidthMm = HAIRLINE_MM
+    }
     for (const item of this.selected) {
-      const ct = (partial.cutType ?? (item.data.cutType as CutType) ?? 'cut') as CutType
+      if (item.data.locked) continue
+      const ct = (partial.cutType ??
+        (item.data.cutType as CutType) ??
+        'cut') as CutType
       applyCutTypeVisual(item, ct, this.style)
       this.applyStrokeWidth(item)
     }
+    if (before && this.selected.length) this.history.pushBefore(before)
     this.notify()
   }
 
@@ -139,42 +229,86 @@ export class CutForgeEditor {
     this.notify()
   }
 
+  undo() {
+    const cur = this.snapshotDoc()
+    const prev = this.history.undo(cur)
+    if (!prev) {
+      this.status = 'Nothing to undo'
+      this.notify()
+      return
+    }
+    this.restoreDoc(prev)
+    this.status = 'Undo'
+    this.notify()
+  }
+
+  redo() {
+    const cur = this.snapshotDoc()
+    const next = this.history.redo(cur)
+    if (!next) {
+      this.status = 'Nothing to redo'
+      this.notify()
+      return
+    }
+    this.restoreDoc(next)
+    this.status = 'Redo'
+    this.notify()
+  }
+
   deleteSelected() {
-    for (const item of [...this.selected]) item.remove()
+    const items = this.selected.filter((i) => !i.data.locked)
+    if (!items.length) return
+    const before = this.snapshotDoc()
+    for (const item of items) item.remove()
+    this.history.pushBefore(before)
     this.deselectAll()
     this.status = 'Deleted'
     this.notify()
   }
 
   duplicateSelected() {
-    const copies = this.selected.map((item) => {
+    const items = this.selected.filter((i) => !i.data.locked)
+    if (!items.length) return
+    const before = this.snapshotDoc()
+    this.docLayer.activate()
+    const copies = items.map((item) => {
       const c = item.clone()
       c.position = c.position.add(new paper.Point(12, 12))
+      c.data.cfId = nextId()
+      c.data.name = `${item.data.name || 'Object'} copy`
+      this.docLayer.addChild(c)
       return c
     })
+    this.history.pushBefore(before)
     this.selectItems(copies)
     this.status = 'Duplicated'
   }
 
   importSvg(svgText: string) {
+    const before = this.snapshotDoc()
     try {
+      this.docLayer.activate()
       const item = paper.project.importSVG(svgText, {
         expandShapes: true,
-        insert: true,
+        insert: false,
       }) as paper.Item
       if (!item) {
         this.status = 'SVG import failed'
         this.notify()
         return
       }
+      this.docLayer.addChild(item)
       this.tagImported(item)
+      ensureMeta(item, 'Imported SVG')
       const pw = this.page.widthMm * PX_PER_MM
       const ph = this.page.heightMm * PX_PER_MM
       if (item.bounds.width > pw * 2 || item.bounds.height > ph * 2) {
-        const s = Math.min(pw / item.bounds.width, ph / item.bounds.height) * 0.8
+        const s =
+          Math.min(pw / item.bounds.width, ph / item.bounds.height) * 0.8
         item.scale(s)
       }
       item.position = new paper.Point(pw / 2, ph / 2)
+      this.history.pushBefore(before)
       this.selectItems([item])
       this.status = 'SVG imported'
     } catch (err) {
@@ -183,26 +317,218 @@ export class CutForgeEditor {
     }
   }
 
+  align(mode: AlignMode) {
+    const items = this.selected.filter((i) => !i.data.locked && i.visible)
+    if (items.length < 2 && !mode.startsWith('distribute')) return
+    if (mode.startsWith('distribute') && items.length < 3) {
+      this.status = 'Distribute needs 3+ items'
+      this.notify()
+      return
+    }
+    const before = this.snapshotDoc()
+    const groupBounds = this.boundsOf(items)
+    if (!groupBounds) return
+
+    if (mode === 'left') {
+      for (const i of items) i.position.x += groupBounds.left - i.bounds.left
+    } else if (mode === 'center') {
+      for (const i of items)
+        i.position.x += groupBounds.center.x - i.bounds.center.x
+    } else if (mode === 'right') {
+      for (const i of items)
+        i.position.x += groupBounds.right - i.bounds.right
+    } else if (mode === 'top') {
+      for (const i of items) i.position.y += groupBounds.top - i.bounds.top
+    } else if (mode === 'middle') {
+      for (const i of items)
+        i.position.y += groupBounds.center.y - i.bounds.center.y
+    } else if (mode === 'bottom') {
+      for (const i of items)
+        i.position.y += groupBounds.bottom - i.bounds.bottom
+    } else if (mode === 'distributeH') {
+      const sorted = [...items].sort(
+        (a, b) => a.bounds.center.x - b.bounds.center.x,
+      )
+      const first = sorted[0].bounds.center.x
+      const last = sorted[sorted.length - 1].bounds.center.x
+      const step = (last - first) / (sorted.length - 1)
+      sorted.forEach((item, idx) => {
+        const target = first + step * idx
+        item.position.x += target - item.bounds.center.x
+      })
+    } else if (mode === 'distributeV') {
+      const sorted = [...items].sort(
+        (a, b) => a.bounds.center.y - b.bounds.center.y,
+      )
+      const first = sorted[0].bounds.center.y
+      const last = sorted[sorted.length - 1].bounds.center.y
+      const step = (last - first) / (sorted.length - 1)
+      sorted.forEach((item, idx) => {
+        const target = first + step * idx
+        item.position.y += target - item.bounds.center.y
+      })
+    }
+
+    this.history.pushBefore(before)
+    this.drawHandles()
+    this.status = `Aligned: ${mode}`
+    this.notify()
+  }
+
+  selectById(id: string, additive = false) {
+    const item = this.docLayer.children.find((c) => c.data.cfId === id)
+    if (!item || item.data.locked) return
+    if (additive) {
+      if (this.selected.includes(item))
+        this.selectItems(this.selected.filter((i) => i !== item))
+      else this.selectItems([...this.selected, item])
+    } else {
+      this.selectItems([item])
+    }
+  }
+
+  setLayerVisible(id: string, visible: boolean) {
+    const item = this.docLayer.children.find((c) => c.data.cfId === id)
+    if (!item) return
+    const before = this.snapshotDoc()
+    item.visible = visible
+    if (!visible) this.selected = this.selected.filter((s) => s !== item)
+    this.history.pushBefore(before)
+    this.drawHandles()
+    this.notify()
+  }
+
+  setLayerLocked(id: string, locked: boolean) {
+    const item = this.docLayer.children.find((c) => c.data.cfId === id)
+    if (!item) return
+    const before = this.snapshotDoc()
+    item.data.locked = locked
+    if (locked) this.selected = this.selected.filter((s) => s !== item)
+    this.history.pushBefore(before)
+    this.drawHandles()
+    this.notify()
+  }
+
+  renameLayer(id: string, name: string) {
+    const item = this.docLayer.children.find((c) => c.data.cfId === id)
+    if (!item) return
+    const before = this.snapshotDoc()
+    item.data.name = name.trim() || item.data.name
+    this.history.pushBefore(before)
+    this.notify()
+  }
+
+  reorderLayer(id: string, direction: 'up' | 'down' | 'top' | 'bottom') {
+    const item = this.docLayer.children.find((c) => c.data.cfId === id)
+    if (!item) return
+    const before = this.snapshotDoc()
+    const kids = this.docLayer.children
+    const idx = kids.indexOf(item)
+    if (direction === 'top') item.bringToFront()
+    else if (direction === 'bottom') item.sendToBack()
+    else if (direction === 'up' && idx < kids.length - 1) item.insertAbove(kids[idx + 1])
+    else if (direction === 'down' && idx > 0) item.insertBelow(kids[idx - 1])
+    this.history.pushBefore(before)
+    this.notify()
+  }
+
+  moveLayer(id: string, toIndexFromTop: number) {
+    const kids = [...this.docLayer.children]
+    const item = kids.find((c) => c.data.cfId === id)
+    if (!item) return
+    const before = this.snapshotDoc()
+    // visual list is reversed (top = last child)
+    const targetIndex = kids.length - 1 - toIndexFromTop
+    item.remove()
+    this.docLayer.insertChild(Math.max(0, Math.min(targetIndex, this.docLayer.children.length)), item)
+    this.history.pushBefore(before)
+    this.notify()
+  }
+
   resizeToCanvas(width: number, height: number) {
     if (width < 10 || height < 10) return
     paper.view.viewSize = new paper.Size(width, height)
+    this.notify()
+  }
+
+  // --- internals ---
+
+  private snapshotDoc(): string {
+    return JSON.stringify(
+      this.docLayer.children.map((c) => c.exportJSON({ asString: true })),
+    )
+  }
+
+  private restoreDoc(raw: string) {
+    this.deselectAll()
+    this.clearHandles()
+    this.clearMarquee()
+    this.docLayer.removeChildren()
+    this.docLayer.activate()
+    try {
+      const list = JSON.parse(raw) as string[]
+      for (const s of list) {
+        const item = paper.project.importJSON(s) as paper.Item | null
+        if (!item) continue
+        if (item.layer !== this.docLayer) this.docLayer.addChild(item)
+        ensureMeta(item)
+      }
+    } catch {
+      this.status = 'Undo/redo restore failed'
+    }
+    this.overlayLayer.bringToFront()
+    this.docLayer.activate()
+  }
+
+  getCursor() {
+    return this.cursor
   }
 
   private tagImported(item: paper.Item) {
     applyCutTypeVisual(item, 'cut', this.style)
     this.applyStrokeWidth(item)
+    ensureMeta(item)
     if (item.children) {
       for (const c of item.children) this.tagImported(c)
     }
   }
 
-  private snapshot() {
+  private autoName(kind: string) {
+    this.nameCounters[kind] = (this.nameCounters[kind] || 0) + 1
+    return `${kind} ${this.nameCounters[kind]}`
+  }
+
+  private snapshot(): EditorSnapshot {
     return {
       selectedCount: this.selected.length,
-      style: this.selected[0] ? styleFromItem(this.selected[0]) : { ...this.style },
+      style: this.selected[0]
+        ? styleFromItem(this.selected[0])
+        : { ...this.style },
       zoom: paper.view.zoom,
       status: this.status,
+      canUndo: this.history.canUndo,
+      canRedo: this.history.canRedo,
+      layers: this.listLayers(),
+      cursor: this.cursor,
+      selectedIds: this.selected.map((s) => String(s.data.cfId)),
     }
+  }
+
+  private listLayers(): LayerInfo[] {
+    // Top of list = front of stack
+    return [...this.docLayer.children]
+      .reverse()
+      .map((item) => {
+        ensureMeta(item)
+        return {
+          id: String(item.data.cfId),
+          name: String(item.data.name),
+          visible: item.visible,
+          locked: !!item.data.locked,
+          selected: this.selected.includes(item),
+          className: item.className,
+        }
+      })
   }
 
   private notify() {
@@ -211,6 +537,7 @@ export class CutForgeEditor {
   }
 
   private rebuildPage() {
+    this.guideLayer.activate()
     this.pageRect?.remove()
     this.gridGroup?.remove()
     const w = this.page.widthMm * PX_PER_MM
@@ -221,7 +548,7 @@ export class CutForgeEditor {
     this.pageRect.strokeColor = new paper.Color('#7a849c')
     this.pageRect.strokeWidth = 1
     this.pageRect.data.isPage = true
-    this.pageRect.sendToBack()
+    this.guideLayer.addChild(this.pageRect)
 
     this.gridGroup = new paper.Group()
     this.gridGroup.data.isGuide = true
@@ -249,14 +576,20 @@ export class CutForgeEditor {
       line.data.isGuide = true
       this.gridGroup.addChild(line)
     }
-    this.gridGroup.insertAbove(this.pageRect)
+    this.guideLayer.addChild(this.gridGroup)
+    this.docLayer.activate()
   }
 
   private applyStrokeWidth(item: paper.Item) {
-    const sw = (this.style.strokeWidthMm || 0.2) * PX_PER_MM
+    const mm = this.style.hairline
+      ? HAIRLINE_MM
+      : this.style.strokeWidthMm || 0.2
+    const sw = mm * PX_PER_MM
     if (item instanceof paper.Path || item instanceof paper.CompoundPath) {
-      item.strokeWidth = Math.max(sw, 0.5)
-      item.data.strokeWidthMm = this.style.strokeWidthMm
+      // keep visible on screen even for hairline
+      item.strokeWidth = Math.max(sw, this.style.hairline ? 0.75 : 0.5)
+      item.data.strokeWidthMm = mm
+      item.data.hairline = !!this.style.hairline
       item.data.strokeColor = this.style.strokeColor
       item.data.fillColor = this.style.fillColor
       item.data.cutType = this.style.cutType
@@ -266,6 +599,20 @@ export class CutForgeEditor {
   private styleNew(item: paper.Item) {
     applyCutTypeVisual(item, this.style.cutType, this.style)
     this.applyStrokeWidth(item)
+    ensureMeta(item, this.autoName(this.toolLabel()))
+  }
+
+  private toolLabel() {
+    const map: Record<Tool, string> = {
+      select: 'Object',
+      rect: 'Rectangle',
+      ellipse: 'Ellipse',
+      line: 'Line',
+      polygon: 'Polygon',
+      freehand: 'Freehand',
+      text: 'Text',
+    }
+    return map[this.tool]
   }
 
   private deselectAll() {
@@ -274,7 +621,9 @@ export class CutForgeEditor {
   }
 
   private selectItems(items: paper.Item[]) {
-    this.selected = items.filter((i) => !isGuide(i))
+    this.selected = items.filter(
+      (i) => !isGuide(i) && i.visible && !i.data.locked,
+    )
     this.drawHandles()
     this.notify()
   }
@@ -290,11 +639,20 @@ export class CutForgeEditor {
     this.currentPath = null
   }
 
-  private selectedBounds(): paper.Rectangle | null {
-    if (!this.selected.length) return null
-    let b = this.selected[0].bounds.clone()
-    for (let i = 1; i < this.selected.length; i++) b = b.unite(this.selected[i].bounds)
+  private clearMarquee() {
+    this.marquee?.remove()
+    this.marquee = null
+  }
+
+  private boundsOf(items: paper.Item[]): paper.Rectangle | null {
+    if (!items.length) return null
+    let b = items[0].bounds.clone()
+    for (let i = 1; i < items.length; i++) b = b.unite(items[i].bounds)
     return b
+  }
+
+  private selectedBounds(): paper.Rectangle | null {
+    return this.boundsOf(this.selected)
   }
 
   private drawHandles() {
@@ -303,6 +661,7 @@ export class CutForgeEditor {
     const bounds = this.selectedBounds()
     if (!bounds) return
     const z = paper.view.zoom
+    this.overlayLayer.activate()
     this.handleGroup = new paper.Group()
     this.handleGroup.data.isHandle = true
 
@@ -333,7 +692,10 @@ export class CutForgeEditor {
     }
 
     const rotPos = new paper.Point(bounds.center.x, bounds.top - 22 / z)
-    const stem = new paper.Path.Line(new paper.Point(bounds.center.x, bounds.top), rotPos)
+    const stem = new paper.Path.Line(
+      new paper.Point(bounds.center.x, bounds.top),
+      rotPos,
+    )
     stem.strokeColor = new paper.Color('#9b59b6')
     stem.strokeWidth = 1 / z
     stem.data.isHandle = true
@@ -346,6 +708,21 @@ export class CutForgeEditor {
     rot.data.isHandle = true
     rot.data.handle = 'rotate'
     this.handleGroup.addChild(rot)
+    this.docLayer.activate()
+  }
+
+  private hitDrawable(point: paper.Point): paper.Item | null {
+    const hit = this.docLayer.hitTest(point, {
+      fill: true,
+      stroke: true,
+      tolerance: 8 / paper.view.zoom,
+    })
+    let item = hit?.item ?? null
+    while (item && item.parent && item.parent !== this.docLayer) {
+      item = item.parent
+    }
+    if (!item || isGuide(item) || !item.visible) return null
+    return item
   }
 
   private wire() {
@@ -356,18 +733,15 @@ export class CutForgeEditor {
         this.viewCenterStart = paper.view.center.clone()
         return
       }
-
-      if (this.tool === 'select') {
-        this.onSelectDown(e)
-      } else {
-        this.onDrawDown(e)
-      }
+      if (this.tool === 'select') this.onSelectDown(e)
+      else this.onDrawDown(e)
     }
 
     this.paperTool.onMouseDrag = (e: paper.ToolEvent) => {
       if (this.mode === 'pan' && this.panStart && this.viewCenterStart) {
         const delta = this.panStart.subtract(e.point)
         paper.view.center = this.viewCenterStart.add(delta)
+        this.notify()
         return
       }
       if (this.tool === 'select') this.onSelectDrag(e)
@@ -386,14 +760,15 @@ export class CutForgeEditor {
   }
 
   private onSelectDown(e: paper.ToolEvent) {
-    const hit = paper.project.hitTest(e.point, {
+    // handles live on overlay
+    const handleHit = this.overlayLayer.hitTest(e.point, {
       fill: true,
       stroke: true,
       tolerance: 8 / paper.view.zoom,
     })
-
-    if (hit?.item?.data?.handle) {
-      const h = String(hit.item.data.handle)
+    if (handleHit?.item?.data?.handle) {
+      this.gestureBefore = this.snapshotDoc()
+      const h = String(handleHit.item.data.handle)
       if (h === 'rotate') {
         this.mode = 'rotate'
         this.transformOrigin = this.selectedBounds()?.center ?? e.point
@@ -415,16 +790,13 @@ export class CutForgeEditor {
       return
     }
 
-    let item = hit?.item ?? null
-    while (item && isGuide(item)) item = item.parent
-
-    // climb to top-level drawable under activeLayer
-    while (item && item.parent && item.parent !== paper.project.activeLayer) {
-      if (isGuide(item.parent)) break
-      item = item.parent
-    }
-
-    if (item && !isGuide(item)) {
+    const item = this.hitDrawable(e.point)
+    if (item) {
+      if (item.data.locked) {
+        this.status = 'Layer locked'
+        this.notify()
+        return
+      }
       if (e.modifiers.shift) {
         if (this.selected.includes(item))
           this.selectItems(this.selected.filter((i) => i !== item))
@@ -432,18 +804,49 @@ export class CutForgeEditor {
       } else if (!this.selected.includes(item)) {
         this.selectItems([item])
       }
+      this.gestureBefore = this.snapshotDoc()
       this.mode = 'move'
       this.dragStart = e.point.clone()
     } else {
-      this.deselectAll()
+      // start marquee
+      if (!e.modifiers.shift) this.deselectAll()
+      this.mode = 'marquee'
+      this.dragStart = e.point.clone()
+      this.overlayLayer.activate()
+      this.clearMarquee()
+      this.marquee = new paper.Path.Rectangle(
+        new paper.Rectangle(e.point, e.point),
+      )
+      this.marquee.strokeColor = new paper.Color('#5b9cff')
+      this.marquee.fillColor = new paper.Color('rgba(91,156,255,0.12)')
+      this.marquee.strokeWidth = 1 / paper.view.zoom
+      this.marquee.dashArray = [4 / paper.view.zoom, 3 / paper.view.zoom]
+      this.marquee.data.isHandle = true
+      this.docLayer.activate()
       this.notify()
     }
   }
 
   private onSelectDrag(e: paper.ToolEvent) {
+    if (this.mode === 'marquee' && this.dragStart) {
+      this.overlayLayer.activate()
+      this.marquee?.remove()
+      this.marquee = new paper.Path.Rectangle(
+        new paper.Rectangle(this.dragStart, e.point),
+      )
+      this.marquee.strokeColor = new paper.Color('#5b9cff')
+      this.marquee.fillColor = new paper.Color('rgba(91,156,255,0.12)')
+      this.marquee.strokeWidth = 1 / paper.view.zoom
+      this.marquee.dashArray = [4 / paper.view.zoom, 3 / paper.view.zoom]
+      this.marquee.data.isHandle = true
+      this.docLayer.activate()
+      return
+    }
     if (this.mode === 'move' && this.dragStart) {
       const delta = e.point.subtract(this.dragStart)
-      for (const item of this.selected) item.position = item.position.add(delta)
+      for (const item of this.selected) {
+        if (!item.data.locked) item.position = item.position.add(delta)
+      }
       this.dragStart = e.point.clone()
       this.drawHandles()
     } else if (this.mode === 'rotate' && this.transformOrigin) {
@@ -452,7 +855,9 @@ export class CutForgeEditor {
         e.point.x - this.transformOrigin.x,
       )
       const deg = ((ang - this.startRotation) * 180) / Math.PI
-      for (const item of this.selected) item.rotate(deg, this.transformOrigin)
+      for (const item of this.selected) {
+        if (!item.data.locked) item.rotate(deg, this.transformOrigin!)
+      }
       this.startRotation = ang
       this.drawHandles()
     } else if (this.mode === 'resize' && this.startBounds && this.resizeCorner) {
@@ -490,8 +895,8 @@ export class CutForgeEditor {
     const sx = startDx === 0 ? 1 : nowDx / startDx
     const sy = startDy === 0 ? 1 : nowDy / startDy
     const s = Math.max(0.05, Math.min(20, (Math.abs(sx) + Math.abs(sy)) / 2))
-    // Reset to original then scale once (non-compounding)
     for (const o of this.origScalings) {
+      if (o.item.data.locked) continue
       o.item.scaling = o.scaling
       o.item.position = o.position
       o.item.scale(s, pivot)
@@ -499,6 +904,29 @@ export class CutForgeEditor {
   }
 
   private onSelectUp() {
+    if (this.mode === 'marquee' && this.marquee && this.dragStart) {
+      const rect = this.marquee.bounds
+      const hits = this.docLayer.children.filter(
+        (c) =>
+          c.visible &&
+          !c.data.locked &&
+          !isGuide(c) &&
+          c.bounds.intersects(rect),
+      )
+      if (hits.length) {
+        const merged = [...new Set([...this.selected, ...hits])]
+        this.selectItems(merged)
+      }
+      this.clearMarquee()
+    } else if (
+      (this.mode === 'move' ||
+        this.mode === 'resize' ||
+        this.mode === 'rotate') &&
+      this.gestureBefore
+    ) {
+      this.history.pushBefore(this.gestureBefore)
+      this.gestureBefore = null
+    }
     this.mode = 'none'
     this.dragStart = null
     this.origScalings = []
@@ -508,15 +936,19 @@ export class CutForgeEditor {
   private onDrawDown(e: paper.ToolEvent) {
     this.dragStart = e.point.clone()
     this.mode = 'draw'
+    this.docLayer.activate()
 
     if (this.tool === 'freehand') {
+      this.gestureBefore = this.snapshotDoc()
       this.currentPath = new paper.Path({ segments: [e.point] })
       this.styleNew(this.currentPath)
+      this.docLayer.addChild(this.currentPath)
     } else if (this.tool === 'polygon') {
       this.polygonPoints.push(e.point.clone())
       this.preview?.remove()
       this.preview = new paper.Path(this.polygonPoints.map((p) => p.clone()))
       this.styleNew(this.preview)
+      this.docLayer.addChild(this.preview)
       this.status = `Polygon: ${this.polygonPoints.length} pts — Enter/dblclick finish`
       this.notify()
     } else if (this.tool === 'text') {
@@ -525,6 +957,7 @@ export class CutForgeEditor {
         this.setTool('select')
         return
       }
+      const before = this.snapshotDoc()
       const t = new paper.PointText({
         point: e.point,
         content,
@@ -532,13 +965,18 @@ export class CutForgeEditor {
         fontFamily: 'Inter, system-ui, sans-serif',
       })
       this.styleNew(t)
+      this.docLayer.addChild(t)
+      this.history.pushBefore(before)
       this.selectItems([t])
       this.setTool('select')
+    } else {
+      this.gestureBefore = this.snapshotDoc()
     }
   }
 
   private onDrawDrag(e: paper.ToolEvent) {
     if (!this.dragStart) return
+    this.docLayer.activate()
     if (this.tool === 'freehand' && this.currentPath) {
       this.currentPath.add(e.point)
       return
@@ -547,24 +985,33 @@ export class CutForgeEditor {
 
     this.preview?.remove()
     if (this.tool === 'rect') {
-      this.preview = new paper.Path.Rectangle(new paper.Rectangle(this.dragStart, e.point))
+      this.preview = new paper.Path.Rectangle(
+        new paper.Rectangle(this.dragStart, e.point),
+      )
     } else if (this.tool === 'ellipse') {
-      this.preview = new paper.Path.Ellipse(new paper.Rectangle(this.dragStart, e.point))
+      this.preview = new paper.Path.Ellipse(
+        new paper.Rectangle(this.dragStart, e.point),
+      )
     } else if (this.tool === 'line') {
       this.preview = new paper.Path.Line(this.dragStart, e.point)
     }
-    if (this.preview) this.styleNew(this.preview)
+    if (this.preview) {
+      this.styleNew(this.preview)
+      this.docLayer.addChild(this.preview)
+    }
   }
 
   private onDrawUp(_e: paper.ToolEvent) {
     if (this.tool === 'freehand' && this.currentPath) {
       if (this.currentPath.segments.length > 2) this.currentPath.simplify(1.5)
       if (this.currentPath.segments.length >= 2) {
+        if (this.gestureBefore) this.history.pushBefore(this.gestureBefore)
         this.selectItems([this.currentPath])
       } else {
         this.currentPath.remove()
       }
       this.currentPath = null
+      this.gestureBefore = null
       this.setTool('select')
     } else if (
       this.preview &&
@@ -573,9 +1020,11 @@ export class CutForgeEditor {
       if (this.preview.bounds.width < 1 && this.preview.bounds.height < 1) {
         this.preview.remove()
       } else {
+        if (this.gestureBefore) this.history.pushBefore(this.gestureBefore)
         this.selectItems([this.preview])
       }
       this.preview = null
+      this.gestureBefore = null
       this.setTool('select')
     }
     this.mode = 'none'
@@ -588,12 +1037,16 @@ export class CutForgeEditor {
       this.notify()
       return
     }
+    const before = this.snapshotDoc()
     this.preview?.remove()
+    this.docLayer.activate()
     const path = new paper.Path(this.polygonPoints.map((p) => p.clone()))
     path.closed = true
     this.styleNew(path)
+    this.docLayer.addChild(path)
     this.polygonPoints = []
     this.preview = null
+    this.history.pushBefore(before)
     this.selectItems([path])
     this.setTool('select')
   }
@@ -601,6 +1054,24 @@ export class CutForgeEditor {
   private onDblClick = () => {
     if (this.tool === 'polygon') this.finishPolygon()
   }
+
+  private onMouseMove = (e: MouseEvent) => {
+    const pt = paper.view.viewToProject(new paper.Point(e.offsetX, e.offsetY))
+    this.cursor = {
+      xMm: pt.x / PX_PER_MM,
+      yMm: pt.y / PX_PER_MM,
+      xView: e.offsetX,
+      yView: e.offsetY,
+    }
+    // lightweight notify for cursor — throttle via rAF
+    if (!this._cursorRaf) {
+      this._cursorRaf = requestAnimationFrame(() => {
+        this._cursorRaf = 0
+        this.notify()
+      })
+    }
+  }
+  private _cursorRaf = 0
 
   private onWheel = (e: WheelEvent) => {
     e.preventDefault()
@@ -612,6 +1083,7 @@ export class CutForgeEditor {
     paper.view.zoom = next
     const after = paper.view.viewToProject(mouse)
     paper.view.center = paper.view.center.add(before.subtract(after))
+    void oldZoom
     this.drawHandles()
     this.notify()
   }
@@ -628,14 +1100,24 @@ export class CutForgeEditor {
       this.deleteSelected()
       e.preventDefault()
     }
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
+    const mod = e.metaKey || e.ctrlKey
+    if (mod && e.key.toLowerCase() === 'd') {
       this.duplicateSelected()
+      e.preventDefault()
+    }
+    if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+      this.undo()
+      e.preventDefault()
+    }
+    if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
+      this.redo()
       e.preventDefault()
     }
     if (e.key === 'Enter' && this.tool === 'polygon') this.finishPolygon()
     if (e.key === 'Escape') {
       this.polygonPoints = []
       this.clearPreview()
+      this.clearMarquee()
       this.setTool('select')
     }
     const map: Record<string, Tool> = {
@@ -648,7 +1130,7 @@ export class CutForgeEditor {
       t: 'text',
     }
     const k = e.key.toLowerCase()
-    if (map[k] && !e.metaKey && !e.ctrlKey && !e.altKey) this.setTool(map[k])
+    if (map[k] && !mod && !e.altKey) this.setTool(map[k])
   }
 
   private onKeyUp = (e: KeyboardEvent) => {
