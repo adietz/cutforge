@@ -1534,8 +1534,40 @@ export class CutForgeEditor {
 
   resizeToCanvas(width: number, height: number) {
     if (width < 10 || height < 10) return
-    paper.view.viewSize = new paper.Size(width, height)
+    // Prefer setViewSize so Paper.js re-applies HiDPI pixelRatio + ctx.scale
+    const vs = paper.view.viewSize
+    if (
+      Math.abs(vs.width - width) > 0.5 ||
+      Math.abs(vs.height - height) > 0.5
+    ) {
+      paper.view.viewSize = new paper.Size(width, height)
+    }
     this.notify()
+  }
+
+  /**
+   * Shared pointer → project mapper. Uses Paper's getEventPoint so CSS size,
+   * devicePixelRatio, zoom, and pan stay in sync (never raw offsetX alone).
+   */
+  clientToProject(e: MouseEvent | WheelEvent | { clientX: number; clientY: number }): paper.Point {
+    const view = paper.view as paper.View & {
+      getEventPoint?: (ev: Event) => paper.Point
+    }
+    if (typeof view.getEventPoint === 'function' && 'target' in e) {
+      try {
+        return view.getEventPoint(e as Event)
+      } catch {
+        /* fall through */
+      }
+    }
+    // Fallback: map client coords via canvas bounding rect into view space
+    const el = this.canvas
+    const rect = el.getBoundingClientRect()
+    const cssW = el.offsetWidth || rect.width || 1
+    const cssH = el.offsetHeight || rect.height || 1
+    const x = ((e.clientX - rect.left) / cssW) * paper.view.viewSize.width
+    const y = ((e.clientY - rect.top) / cssH) * paper.view.viewSize.height
+    return paper.view.viewToProject(new paper.Point(x, y))
   }
 
   // --- internals ---
@@ -2490,7 +2522,7 @@ export class CutForgeEditor {
       this.finishPolygon()
       return
     }
-    const pt = paper.view.viewToProject(new paper.Point(e.offsetX, e.offsetY))
+    const pt = this.clientToProject(e)
     const hit = this.hitDrawable(pt)
     if (
       hit &&
@@ -3046,12 +3078,12 @@ export class CutForgeEditor {
   }
 
   private onMouseMove = (e: MouseEvent) => {
-    const pt = paper.view.viewToProject(new paper.Point(e.offsetX, e.offsetY))
+    const pt = this.clientToProject(e)
     this.cursor = {
       xMm: pt.x / PX_PER_MM,
       yMm: pt.y / PX_PER_MM,
-      xView: e.offsetX,
-      yView: e.offsetY,
+      xView: e.clientX,
+      yView: e.clientY,
     }
     if (!this._cursorRaf) {
       this._cursorRaf = requestAnimationFrame(() => {
@@ -3067,10 +3099,10 @@ export class CutForgeEditor {
     const oldZoom = paper.view.zoom
     const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1
     const next = Math.min(8, Math.max(0.1, oldZoom * factor))
-    const mouse = new paper.Point(e.offsetX, e.offsetY)
-    const before = paper.view.viewToProject(mouse)
+    // Keep the project point under the cursor stable across zoom
+    const before = this.clientToProject(e)
     paper.view.zoom = next
-    const after = paper.view.viewToProject(mouse)
+    const after = this.clientToProject(e)
     paper.view.center = paper.view.center.add(before.subtract(after))
     void oldZoom
     this.drawHandles()

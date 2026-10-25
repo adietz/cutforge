@@ -81,10 +81,9 @@ export function CanvasView({
 
     const ro = new ResizeObserver(() => {
       const { clientWidth, clientHeight } = wrap
-      canvas.width = clientWidth * devicePixelRatio
-      canvas.height = clientHeight * devicePixelRatio
-      canvas.style.width = `${clientWidth}px`
-      canvas.style.height = `${clientHeight}px`
+      // Do NOT set canvas.width/height here — that resets the 2D context and
+      // wipes Paper.js HiDPI ctx.scale(devicePixelRatio), which made geometry
+      // appear up/left of the cursor. Paper.view.viewSize owns the buffer.
       editor.resizeToCanvas(clientWidth, clientHeight)
       drawRulers(editor, unit, hRulerRef.current, vRulerRef.current, wrap)
     })
@@ -149,8 +148,7 @@ export function CanvasView({
           const ed = editorRef.current
           const canvas = canvasRef.current
           if (!ed || !canvas) return
-          const rect = canvas.getBoundingClientRect()
-          const pt = ed.viewToProject(e.clientX - rect.left, e.clientY - rect.top)
+          const pt = ed.clientToProject(e)
           const items = ed.getContextMenuActions(pt)
           if (!items?.length) {
             setCtxMenu(null)
