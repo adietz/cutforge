@@ -13,6 +13,7 @@ export function TopBar({
   onExportDxf,
   onMachineExport,
   onSendMachine,
+  onSendSilhouette,
   onUndo,
   onRedo,
   onHelp,
@@ -31,6 +32,7 @@ export function TopBar({
   onExportDxf: () => void
   onMachineExport: () => void
   onSendMachine: () => void
+  onSendSilhouette: () => void
   onUndo: () => void
   onRedo: () => void
   onHelp: () => void
@@ -73,6 +75,14 @@ export function TopBar({
           title="Connect to IKIER K1 and send G-code"
         >
           Send to K1
+        </button>
+        <button
+          type="button"
+          className="btn primary"
+          onClick={onSendSilhouette}
+          title="Send cut paths to Silhouette Cameo / Portrait over USB"
+        >
+          Send to Silhouette
         </button>
         <button
           type="button"

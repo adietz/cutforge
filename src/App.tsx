@@ -8,6 +8,7 @@ import {
 } from './components/MachineExportModal'
 import { profileById } from './export/profiles'
 import { MachinePanel } from './components/MachinePanel'
+import { SilhouettePanel } from './components/SilhouettePanel'
 import { Inspector } from './components/Inspector'
 import { RecoveryModal } from './components/RecoveryModal'
 import { Toolbar } from './components/Toolbar'
@@ -70,6 +71,7 @@ export default function App() {
   const [traceOpen, setTraceOpen] = useState(false)
   const [machineExportOpen, setMachineExportOpen] = useState(false)
   const [machinePanelOpen, setMachinePanelOpen] = useState(false)
+  const [silhouettePanelOpen, setSilhouettePanelOpen] = useState(false)
   const [exportTextCount, setExportTextCount] = useState(0)
   const recoveryJson = useRef<string | null>(null)
 
@@ -442,6 +444,7 @@ export default function App() {
         onExportDxf={() => void onExportDxf()}
         onMachineExport={openMachineExport}
         onSendMachine={() => setMachinePanelOpen(true)}
+        onSendSilhouette={() => setSilhouettePanelOpen(true)}
         onUndo={() => editorRef.current?.undo()}
         onRedo={() => editorRef.current?.redo()}
         onHelp={() => setHelpOpen(true)}
@@ -498,6 +501,19 @@ export default function App() {
         />
       </div>
       <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <SilhouettePanel
+        open={silhouettePanelOpen}
+        onClose={() => setSilhouettePanelOpen(false)}
+        getItems={() =>
+          editorRef.current?.getExportItems({
+            includeRegMarks: false,
+            excludeLocked: true,
+            excludeHidden: true,
+          }) ?? []
+        }
+        page={page}
+        onStatus={setStatus}
+      />
       <MachinePanel
         open={machinePanelOpen}
         onClose={() => setMachinePanelOpen(false)}

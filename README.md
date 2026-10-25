@@ -1,77 +1,64 @@
 # CutForge
 
-Vector design for **laser** (IKIER K1 / GRBL diode) and **Silhouette**.  
+Vector design for **IKIER K1** (GRBL diode laser) and **Silhouette** cutters.  
 **Tauri 2 + React + TypeScript + Paper.js**.
 
-## Features (v0.7.0)
+## Features (v0.8.0)
 
-- Editor: tools, snap, booleans, layers, undo, `.cutforge` projects
-- Text → outlines (OFL fonts) · image tracing
-- **Send to K1** — generate GRBL G-code and stream over USB serial (bypasses LightBurn)
-- Machine file export (SVG/DXF) still available; LightBurn is **optional**
-- Page presets including IKIER K1 **410×410 mm**
+- Editor, snap, booleans, text→outlines, image tracing, machine file export
+- **Send to K1** — USB serial G-code with denser/angled/cross-hatch engrave fills
+- **Send to Silhouette** — USB GPGL to Cameo / Portrait (open Graphtec protocol)
+- SVG/DXF export remains; LightBurn optional
 
-## Send to IKIER K1 (v0.7)
+## Engrave fills (K1)
 
-Top bar → **Send to K1** (desktop app only).
+In **Send to K1**, Engrave paths that are **closed** are filled with hatch lines:
 
-1. Plug the K1 via **USB Type-C**.
-2. **Refresh ports** → select the serial device → baud **115200** → **Connect**.
-3. Optional: **Home** (`$H` if enabled on the controller), **Jog** (laser stays off).
-4. Set Cut / Score / Engrave **speed** (mm/min) and **power** (GRBL `S`, usually 0–1000).
-5. Preview G-code · **Save .nc** dry-run · or **Send job**.
-6. **Cancel / laser off** or disconnect always attempts **M5**.
+| Control | Default | Notes |
+|---------|---------|--------|
+| Hatch mm | 0.2 | Line spacing (denser = smaller) |
+| Angle ° | 0 | 0 = horizontal |
+| Cross-hatch | off | Second pass at angle+90° |
 
-### G-code conventions
+Cut and Score stay pure vectors. Cancel / disconnect still commands **M5**.
 
-| | |
-|--|--|
-| Units | mm (`G21`), absolute (`G90`) |
-| Origin | Page **lower-left**, **Y-up** (canvas Y-down is flipped) |
-| Cut | Vector `G1` with `M4 S…` |
-| Score | Same, lower default power / higher speed |
-| Engrave | Horizontal hatch fill (spacing configurable); open paths stroke |
-| End | `M5`, optional return to `X0 Y0`, `M2` |
+## Send to Silhouette (USB)
 
-**Safety:** wear eye protection / follow your laser’s rules. Defaults are starting
-points only — **calibrate on scrap**. Cancel and disconnect command laser off.
+Top bar → **Send to Silhouette** (desktop app).
 
-### Platform notes
+1. Plug Cameo / Portrait via USB → **Refresh**
+2. Set speed/pressure per Cut / Score / Engrave
+3. Preview GPGL → **Save .gpgl** or **Send to cutter**
 
-| | |
-|--|--|
-| **Works** | CutForge **Tauri** desktop (Windows / macOS / Linux) |
-| **Not in v0.7** | Browser `npm run dev` serial (preview + save `.nc` only) · Wi‑Fi / vendor app |
-| Linux | User in `dialout` (or `uucp`) group for `/dev/ttyUSB*` / `ttyACM*` |
-| macOS | Allow USB accessories; prefer `/dev/cu.*` |
-| Windows | Install CH340 / CP210x drivers if the port is missing |
+**Mapping:** Cut → blade · Score → light blade (kiss) · Engrave → pen/draw (`FC0`).
 
-## File export (optional)
+**Models (USB VID `0x0b4d`, plus Cameo 5 Alpha `0x3844`):** Cameo 1–5 / Plus / Pro,
+Portrait 1–4 (same family as [inkscape-silhouette](https://github.com/fablabnbg/inkscape-silhouette)).
 
-**Export file** → machine profiles (IKIER K1 SVG/DXF, Silhouette hairline SVG,
-LightBurn colors, Glowforge). Use if you still want LightBurn/LaserGRBL/Studio.
+| Platform | Notes |
+|----------|--------|
+| Linux | udev rule for `0b4d` or add user to `lp`; may need to detach usblp |
+| macOS | Allow USB accessories when prompted |
+| Windows | libusb via WinUSB/Zadig may be required; Studio cannot hold the device |
+| Browser | Preview + save dump only — no USB |
+| Bluetooth | Not in v0.8 |
+
+**Fallback:** export SVG / GPGL dump and use Silhouette Studio or inkscape-silhouette.
+
+## Send to IKIER K1
+
+See v0.7 docs: serial 115200, mm absolute, origin lower-left Y-up. Desktop only.
 
 ## Run
 
 ```bash
-cd cutforge
 npm install
-npm run dev          # web UI (no serial send)
-npm run tauri:dev    # desktop with USB serial
-npm run tauri:build
-```
-
-## Layout
-
-```
-src/machine/     G-code + serial bridge
-src/export/      SVG / DXF / profiles
-src-tauri/src/serial_grbl.rs   GRBL serial (list/connect/stream/cancel)
+npm run tauri:dev    # USB features
+npm run build && cd src-tauri && cargo check
 ```
 
 ## Limits
 
-- No Wi‑Fi / IKIER app bridge
-- Engrave hatch is simple (not adaptive/bitmap)
-- Homing requires GRBL hard-limits / `$H` enabled
-- Power scale assumes GRBL `$30≈1000` — adjust presets to your firmware
+- Silhouette send is a pragmatic GPGL subset (no reg-mark seek, no BLE)
+- Engrave hatch is scanline-based (not bitmap)
+- No Wi‑Fi machine links

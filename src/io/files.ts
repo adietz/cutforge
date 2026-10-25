@@ -6,7 +6,7 @@ const FILTERS: Record<FileKind, { name: string; extensions: string[] }> = {
   cutforge: { name: 'CutForge Project', extensions: ['cutforge', 'json'] },
   svg: { name: 'SVG', extensions: ['svg'] },
   dxf: { name: 'DXF', extensions: ['dxf'] },
-  gcode: { name: 'G-code', extensions: ['nc', 'gcode', 'gc'] },
+  gcode: { name: 'G-code / GPGL', extensions: ['nc', 'gcode', 'gc', 'gpgl'] },
 }
 
 function browserDownload(filename: string, text: string, mime: string) {

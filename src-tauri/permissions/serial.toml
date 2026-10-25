@@ -1,6 +1,6 @@
 [[permission]]
 identifier = "allow-serial"
-description = "List serial ports and talk to a GRBL laser (IKIER K1)"
+description = "USB serial (IKIER K1 GRBL) and Silhouette Graphtec USB"
 commands.allow = [
   "list_serial_ports",
   "serial_connect",
@@ -11,4 +11,6 @@ commands.allow = [
   "serial_home",
   "serial_jog",
   "serial_send_gcode",
+  "list_silhouette_devices",
+  "silhouette_send_gpgl",
 ]

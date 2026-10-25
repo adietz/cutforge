@@ -170,7 +170,7 @@ export function MachinePanel({
 
   const setOp = (
     key: 'cut' | 'score' | 'engrave',
-    field: 'speed' | 'power' | 'hatchMm',
+    field: 'speed' | 'power' | 'hatchMm' | 'hatchAngleDeg',
     value: number,
   ) => {
     setPresets((prev) => ({
@@ -330,15 +330,45 @@ export function MachinePanel({
                   />
                 </label>
                 {key === 'engrave' && (
-                  <label>
-                    Hatch mm
-                    <input
-                      type="number"
-                      step="0.05"
-                      value={presets.engrave.hatchMm ?? 0.25}
-                      onChange={(e) => setOp('engrave', 'hatchMm', +e.target.value)}
-                    />
-                  </label>
+                  <>
+                    <label>
+                      Hatch mm
+                      <input
+                        type="number"
+                        step="0.05"
+                        min={0.05}
+                        value={presets.engrave.hatchMm ?? 0.2}
+                        onChange={(e) => setOp('engrave', 'hatchMm', +e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Angle °
+                      <input
+                        type="number"
+                        step="5"
+                        value={presets.engrave.hatchAngleDeg ?? 0}
+                        onChange={(e) =>
+                          setOp('engrave', 'hatchAngleDeg', +e.target.value)
+                        }
+                      />
+                    </label>
+                    <label className="check" style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={!!presets.engrave.crossHatch}
+                        onChange={(e) =>
+                          setPresets((prev) => ({
+                            ...prev,
+                            engrave: {
+                              ...prev.engrave,
+                              crossHatch: e.target.checked,
+                            },
+                          }))
+                        }
+                      />
+                      Cross-hatch
+                    </label>
+                  </>
                 )}
               </div>
             ))}

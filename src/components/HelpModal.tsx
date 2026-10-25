@@ -6,11 +6,10 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
         className="modal"
         role="dialog"
         aria-modal="true"
-        aria-label="Keyboard shortcuts"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="modal-header">
-          <h2>CutForge shortcuts · v0.7</h2>
+          <h2>CutForge shortcuts · v0.8</h2>
           <button type="button" className="btn" onClick={onClose}>
             Close
           </button>
@@ -20,16 +19,11 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
             <tbody>
               {[
                 ['V R E L P F T', 'Tools'],
-                ['Shift (line / polygon / rotate)', 'Snap to 15° increments'],
-                ['Shift (rect / ellipse)', 'Square / circle'],
-                ['Drag empty / Shift+click', 'Marquee / toggle (Shift does not drag)'],
+                ['Shift', '15° / square / circle'],
                 ['Ctrl/Cmd+A C V D', 'Select all / Copy / Paste / Duplicate'],
-                ['Ctrl/Cmd+Z / Shift+Z / Y', 'Undo / Redo'],
-                ['Ctrl/Cmd+S / Shift+S · O', 'Save / Save As / Open'],
+                ['Ctrl/Cmd+Z · S · O', 'Undo / Save / Open'],
                 ['Space+drag / Wheel', 'Pan / Zoom'],
-                ['Delete / Backspace', 'Delete selection'],
-                ['Esc', 'Cancel drawing, else clear selection'],
-                ['?', 'This cheatsheet'],
+                ['Esc / ?', 'Cancel or clear / Help'],
               ].map(([k, v]) => (
                 <tr key={k}>
                   <td>
@@ -41,16 +35,16 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
             </tbody>
           </table>
           <p className="hint">
-            <strong>Send to K1:</strong> top bar → stream GRBL G-code over USB
-            serial (115200). Cut / Score / Engrave use speed &amp; power presets;
-            engrave uses a simple hatch. Cancel / disconnect commands{' '}
-            <strong>M5 laser off</strong>. Desktop (Tauri) only — not the browser.
+            <strong>Send to K1:</strong> GRBL USB G-code. Engrave fills use
+            configurable hatch spacing, angle, and optional cross-hatch. Cancel
+            / disconnect → <strong>M5</strong> laser off.
             <br />
-            <strong>File export</strong> (SVG/DXF) remains available; LightBurn /
-            LaserGRBL are <em>optional</em>, not required.
+            <strong>Send to Silhouette:</strong> USB GPGL to Cameo / Portrait
+            (open Graphtec protocol). Cut=blade, Score=light pressure,
+            Engrave=pen. Desktop only; Linux udev <code>0b4d</code> / group{' '}
+            <code>lp</code>. Fallback: inkscape-silhouette.
             <br />
-            G-code origin: page lower-left, Y-up, mm. Calibrate power/speed on scrap.
-            No Wi‑Fi path in v0.7.
+            File export (SVG/DXF) still available; LightBurn optional.
           </p>
         </div>
       </div>
