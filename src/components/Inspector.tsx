@@ -37,6 +37,12 @@ export function Inspector({
   onToggleLocked,
   onRenameLayer,
   onReorderLayer,
+  onAddLayer,
+  onDuplicateLayer,
+  onDeleteLayer,
+  onUpdateLayer,
+  onMoveSelectionToLayer,
+  onSetActiveLayer,
   onBoolean,
   onOffset,
   regMarks,
@@ -76,6 +82,17 @@ export function Inspector({
   onToggleLocked: (id: string, locked: boolean) => void
   onRenameLayer: (id: string, name: string) => void
   onReorderLayer: (id: string, dir: 'up' | 'down' | 'top' | 'bottom') => void
+  onAddLayer: () => void
+  onDuplicateLayer: (id: string) => void
+  onDeleteLayer: (id: string) => void
+  onUpdateLayer: (
+    id: string,
+    partial: Partial<
+      Pick<LayerInfo, 'color' | 'cutType' | 'power' | 'speed' | 'passes'>
+    >,
+  ) => void
+  onMoveSelectionToLayer: (id: string) => void
+  onSetActiveLayer: (id: string) => void
   onBoolean: (op: BooleanOp) => void
   onOffset: (offsetMm: number) => void
   regMarks: boolean
@@ -523,11 +540,18 @@ export function Inspector({
 
       <LayersPanel
         layers={layers}
+        selectedCount={selectedCount}
         onSelect={onSelectLayer}
         onToggleVisible={onToggleVisible}
         onToggleLocked={onToggleLocked}
         onRename={onRenameLayer}
         onReorder={onReorderLayer}
+        onAdd={onAddLayer}
+        onDuplicate={onDuplicateLayer}
+        onDelete={onDeleteLayer}
+        onUpdate={onUpdateLayer}
+        onMoveSelectionToLayer={onMoveSelectionToLayer}
+        onSetActive={onSetActiveLayer}
       />
 
       <p className="hint">

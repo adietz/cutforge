@@ -1,35 +1,33 @@
 # CutForge
 
 Daily-driver vector design for **IKIER K1** (GRBL diode laser) and **Silhouette** cutters.  
-**Tauri 2 + React + TypeScript + Paper.js** · **v1.4.0**
+**Tauri 2 + React + TypeScript + Paper.js** · **v1.5.0**
 
 ## Feature summary
 
 | Area | What you get |
 |------|----------------|
 | Editor | Tools, snap, layers, undo, booleans, text→outlines, image trace |
-| **Nest / Pack** | Shelf pack selection or all onto the bed (gap/margin, optional 90°) |
-| Import | SVG, DXF · AI/PDF, EPS, CDR, EMF via helpers — `docs/IMPORT.md` |
-| Materials | Editable laser + Silhouette library (localStorage) |
-| K1 | USB G-code, jog/frame/origin, bitmap engrave, Wi‑Fi TCP |
+| **Layers** | Named layers with color, cut type, visibility, lock, S/F/passes; cut order |
+| Nest / Pack | AABB shelf pack onto the bed |
+| Import | SVG, DXF · AI/PDF, EPS, CDR, EMF — `docs/IMPORT.md` |
+| Materials | Editable laser + Silhouette library |
+| K1 | USB G-code, jog/frame, bitmap engrave, Wi‑Fi TCP |
 | Silhouette | USB GPGL · optical seek · Print & Cut |
 
-## Nest / Pack (v1.4)
+## Layers (v1.5)
 
-On the Arrange bar (above the canvas):
+Inspector → **Layers** panel:
 
-1. Set **Gap** (between parts, default 2.5 mm) and **Margin** (from sheet edge, default 3 mm).
-2. Optionally allow **90°** rotations.
-3. **Nest selection** or **Nest all** (unlocked, visible shapes only).
-4. Status reports how many placed / did not fit. **Undo** restores previous positions & rotations.
+- **+** add layer; ↑/↓ reorder (**top = cut first** on export / Send to K1 / Silhouette).
+- Eye = visible (hidden layers are **not** cut). Lock = no edit / no nest move (still cut if visible).
+- Color swatch + operation (Cut / Score / Engrave / Print). Optional power **S**, speed **F**, passes overrides (else material / color map).
+- Active layer (highlighted): new shapes land here. Move selection with **Move selection to…**.
+- Persisted in `.cutforge` (`layers` + `activeLayerId`). Undo restores layer defs + objects.
 
-Uses the **current page size** as the bed (e.g. IKIER K1 410×410 mm).
+## Nest / Materials / Import
 
-**Algorithm limits:** axis-aligned bounding-box **shelf packing** only — no arbitrary-angle nesting, no true shape NFP interlocking. Irregular parts pack by their AABB, so concave waste is not recovered.
-
-## Materials / K1 frame / Import
-
-See in-app Help and prior docs (`docs/IMPORT.md`).
+See Help and `docs/IMPORT.md`.
 
 ## Run
 

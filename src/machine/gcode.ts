@@ -13,6 +13,11 @@ export interface GcodeOptions {
   presets: MachineLaserPresets
   /** Color → power/speed overrides (stroke for vectors, fill for engrave) */
   colorMap?: LaserColorMapEntry[]
+  /** Per-layer laser overrides (from Layers panel) */
+  layerMap?: Map<
+    string,
+    { power: number | null; speed: number | null; passes: number | null }
+  >
   comments?: boolean
   returnHome?: boolean
 }
@@ -66,7 +71,13 @@ export function generateGcode(
         : cutType === 'score'
           ? p.score
           : p.cut
-    const preset = resolvePreset(item, cutType, base, colorMap)
+    const preset = resolvePreset(
+      item,
+      cutType,
+      base,
+      colorMap,
+      options.layerMap,
+    )
     const passes = Math.max(1, Math.round(preset.passes ?? 1))
     for (let pass = 0; pass < passes; pass++) {
       if (passes > 1) lines.push(`; pass ${pass + 1}/${passes}`)
@@ -94,19 +105,34 @@ function resolvePreset(
   cutType: CutType,
   base: OpPreset,
   colorMap: LaserColorMapEntry[],
+  layerMap?: Map<
+    string,
+    { power: number | null; speed: number | null; passes: number | null }
+  >,
 ): OpPreset {
-  if (!colorMap.length) return base
-  const hit = lookupColorMap(colorMap, {
-    strokeColor: (item.data?.strokeColor as string) || null,
-    fillColor: (item.data?.fillColor as string) || null,
-    prefer: cutType === 'engrave' ? 'fill' : 'stroke',
-  })
-  if (!hit) return base
-  return {
-    ...base,
-    power: hit.power,
-    speed: hit.speed != null ? hit.speed : base.speed,
+  let preset: OpPreset = { ...base }
+  if (colorMap.length) {
+    const hit = lookupColorMap(colorMap, {
+      strokeColor: (item.data?.strokeColor as string) || null,
+      fillColor: (item.data?.fillColor as string) || null,
+      prefer: cutType === 'engrave' ? 'fill' : 'stroke',
+    })
+    if (hit) {
+      preset = {
+        ...preset,
+        power: hit.power,
+        speed: hit.speed != null ? hit.speed : preset.speed,
+      }
+    }
   }
+  const lid = String(item.data?.layerId || '')
+  const layer = lid && layerMap ? layerMap.get(lid) : undefined
+  if (layer) {
+    if (layer.power != null) preset = { ...preset, power: layer.power }
+    if (layer.speed != null) preset = { ...preset, speed: layer.speed }
+    if (layer.passes != null) preset = { ...preset, passes: layer.passes }
+  }
+  return preset
 }
 
 function flatten(items: paper.Item[]): paper.Item[] {

@@ -9,7 +9,7 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
         onClick={(e) => e.stopPropagation()}
       >
         <header className="modal-header">
-          <h2>CutForge · v1.4</h2>
+          <h2>CutForge · v1.5</h2>
           <button type="button" className="btn" onClick={onClose}>
             Close
           </button>
@@ -34,13 +34,13 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
             </tbody>
           </table>
           <p className="hint">
-            <strong>Nest / Pack:</strong> top Arrange bar → Nest selection or Nest
-            all. Packs AABB shelves onto the current page/bed with gap &amp;
-            margin (default ~2.5 / 3 mm). Optional 90° rotations. Undo restores
-            prior poses. Locked/hidden/guides/reg-marks skipped. Not free-angle
-            nesting.
+            <strong>Layers:</strong> Inspector → Layers. Top of the list cuts
+            first. Visible/locked toggles; color + Cut/Score/Engrave/Print;
+            optional S/F/passes overrides for K1. New shapes go on the active
+            layer (double-click or +). Move selection via dropdown. Saved in
+            .cutforge.
             <br />
-            <strong>Also:</strong> materials library · K1 jog/frame · Import ·
+            <strong>Also:</strong> Nest · materials · K1 frame/jog · Import ·
             Print &amp; Cut.
           </p>
         </div>

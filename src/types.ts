@@ -50,10 +50,18 @@ export interface SnapSettings {
 export interface LayerInfo {
   id: string
   name: string
+  color: string
   visible: boolean
   locked: boolean
+  /** Active layer for new shapes */
+  active: boolean
+  /** True if any object on this layer is selected */
   selected: boolean
-  className: string
+  itemCount: number
+  cutType: CutType
+  power: number | null
+  speed: number | null
+  passes: number | null
 }
 
 export interface CursorInfo {
@@ -82,6 +90,7 @@ export interface EditorSnapshot {
   canBoolean: boolean
   hasText: boolean
   printAndCut: boolean
+  activeLayerId: string
 }
 
 export const INCH_TO_MM = 25.4
@@ -100,5 +109,5 @@ export const DEFAULT_SNAP: SnapSettings = {
   gridMm: 5,
 }
 
-export const CUTFORGE_VERSION = 1
+export const CUTFORGE_VERSION = 2
 export const RECOVERY_KEY = 'cutforge-recovery-v1'

@@ -296,7 +296,7 @@ export default function App() {
     if (ed.isDirty() && !window.confirm('Discard unsaved changes?')) return
     ed.loadProject({
       format: 'cutforge',
-      version: 1,
+      version: 2,
       name: 'Untitled',
       unit,
       page: { ...PAGE_PRESETS[2] },
@@ -596,6 +596,16 @@ export default function App() {
           onToggleLocked={(id, l) => editorRef.current?.setLayerLocked(id, l)}
           onRenameLayer={(id, n) => editorRef.current?.renameLayer(id, n)}
           onReorderLayer={(id, d) => editorRef.current?.reorderLayer(id, d)}
+          onAddLayer={() => editorRef.current?.addLayer()}
+          onDuplicateLayer={(id) => editorRef.current?.duplicateLayer(id)}
+          onDeleteLayer={(id) => editorRef.current?.deleteLayer(id)}
+          onUpdateLayer={(id, partial) =>
+            editorRef.current?.updateLayer(id, partial)
+          }
+          onMoveSelectionToLayer={(id) =>
+            editorRef.current?.moveSelectionToLayer(id)
+          }
+          onSetActiveLayer={(id) => editorRef.current?.setActiveLayer(id)}
           onBoolean={(op) => editorRef.current?.booleanSelected(op)}
           onOffset={(mm) => editorRef.current?.offsetSelected(mm)}
         />
@@ -613,7 +623,7 @@ export default function App() {
         getItems={() =>
           editorRef.current?.getExportItems({
             includeRegMarks: false,
-            excludeLocked: true,
+            excludeLocked: false,
             excludeHidden: true,
           }) ?? []
         }
@@ -626,10 +636,24 @@ export default function App() {
         getItems={() =>
           editorRef.current?.getExportItems({
             includeRegMarks: false,
-            excludeLocked: true,
+            excludeLocked: false,
             excludeHidden: true,
           }) ?? []
         }
+        getLayerMap={() => {
+          const map = new Map<
+            string,
+            { power: number | null; speed: number | null; passes: number | null }
+          >()
+          for (const l of editorRef.current?.getLayers() || []) {
+            map.set(l.id, {
+              power: l.power,
+              speed: l.speed,
+              passes: l.passes,
+            })
+          }
+          return map
+        }}
         getBounds={(preferSelection) => {
           const b = editorRef.current?.getJobBounds(preferSelection !== false)
           if (!b) return null

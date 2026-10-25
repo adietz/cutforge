@@ -6,6 +6,12 @@ import { booleanOperate, offsetPath } from './booleans'
 import { constrainPointToAngle, snapAngleDeg } from './angles'
 import { buildRegistrationMarks } from './regMarks'
 import { packShelf } from './nesting'
+import {
+  cloneLayer,
+  createLayer,
+  defaultLayers,
+  type CfLayer,
+} from './layerModel'
 import { convertPointTextToOutlines } from './textOutlines'
 import { parseDocument, serializeDocument } from '../project/cutforgeDoc'
 import type { CutForgeDocument } from '../project/cutforgeDoc'
@@ -134,6 +140,9 @@ export class CutForgeEditor {
   private regMarksEnabled = false
   private regMarksGroup: paper.Group | null = null
   private printAndCutMode = false
+  /** Named layers; index 0 = top of panel = cut first */
+  private layers: CfLayer[] = defaultLayers()
+  private activeLayerId: string = this.layers[0]?.id || ''
   private rotateBaseDeg = 0
 
   constructor(canvas: HTMLCanvasElement, page: PagePreset) {
@@ -231,16 +240,35 @@ export class CutForgeEditor {
         : this.regMarksEnabled
     const excludeLocked = opts?.excludeLocked !== false
     const excludeHidden = opts?.excludeHidden !== false
+    this.ensureLayers()
     const items: paper.Item[] = []
-    for (const item of this.docLayer.children) {
-      if (excludeHidden && !item.visible) continue
-      if (excludeLocked && item.data?.locked) continue
-      items.push(item)
+    // Cut order: layers[0] (top of panel) first, then document z-order within layer
+    for (const layer of this.layers) {
+      if (excludeHidden && !layer.visible) continue
+      for (const item of this.docLayer.children) {
+        this.ensureItemLayer(item)
+        if (String(item.data.layerId) !== layer.id) continue
+        if (excludeHidden && (!item.visible || !layer.visible)) continue
+        if (excludeLocked && (item.data?.locked || layer.locked)) continue
+        items.push(item)
+      }
     }
     if (includeReg && this.regMarksGroup) {
       items.push(this.regMarksGroup)
     }
     return items
+  }
+
+  getLayers(): CfLayer[] {
+    return this.layers.map(cloneLayer)
+  }
+
+  getActiveLayerId() {
+    return this.activeLayerId
+  }
+
+  getLayerMap(): Map<string, CfLayer> {
+    return new Map(this.layers.map((l) => [l.id, l]))
   }
 
   countTextObjects(opts?: { excludeLocked?: boolean; excludeHidden?: boolean }): number {
@@ -562,6 +590,7 @@ export class CutForgeEditor {
       this.docLayer.addChild(item)
       this.tagImported(item)
       ensureMeta(item, sourceName)
+      this.ensureItemLayer(item)
       const pw = this.page.widthMm * PX_PER_MM
       const ph = this.page.heightMm * PX_PER_MM
       const maxW = pw * 0.85
@@ -633,6 +662,7 @@ export class CutForgeEditor {
   }
 
   toProjectJSON(name = 'Untitled'): string {
+    this.ensureLayers()
     return serializeDocument({
       name: this.fileName?.replace(/\.cutforge$/i, '') || name,
       unit: this.unit,
@@ -643,6 +673,8 @@ export class CutForgeEditor {
       regMarks: this.regMarksEnabled,
       printAndCut: this.printAndCutMode,
       laserColorMap: this.laserColorMap,
+      layers: this.layers,
+      activeLayerId: this.activeLayerId,
     })
   }
 
@@ -664,6 +696,17 @@ export class CutForgeEditor {
     this.fileName = parsed.name.endsWith('.cutforge')
       ? parsed.name
       : `${parsed.name}.cutforge`
+    if (parsed.layers?.length) {
+      this.layers = parsed.layers.map(cloneLayer)
+      this.activeLayerId =
+        parsed.activeLayerId &&
+        this.layers.some((l) => l.id === parsed.activeLayerId)
+          ? parsed.activeLayerId
+          : this.layers[0].id
+    } else {
+      this.layers = defaultLayers()
+      this.activeLayerId = this.layers[0].id
+    }
     this.rebuildPage()
     this.rebuildRegMarks()
     this.docLayer.removeChildren()
@@ -673,7 +716,9 @@ export class CutForgeEditor {
       if (!item) continue
       if (item.layer !== this.docLayer) this.docLayer.addChild(item)
       ensureMeta(item)
+      this.ensureItemLayer(item)
     }
+    this.syncItemsToLayerFlags()
     this.history.clear()
     this.dirty = false
     this.fitPage()
@@ -904,6 +949,7 @@ export class CutForgeEditor {
       this.docLayer.addChild(item)
       this.tagImported(item)
       ensureMeta(item, 'Imported SVG')
+      this.attachToActiveLayer(item)
       const pw = this.page.widthMm * PX_PER_MM
       const ph = this.page.heightMm * PX_PER_MM
       if (item.bounds.width > pw * 2 || item.bounds.height > ph * 2) {
@@ -1068,13 +1114,34 @@ export class CutForgeEditor {
     if (isGuide(item)) return false
     if (item.data?.isRegMark) return false
     if (item.data?.isHandle || item.data?.isPage) return false
-    // Skip empty / zero-size
     if (item.bounds.width < 0.1 || item.bounds.height < 0.1) return false
+    this.ensureItemLayer(item)
+    const layer = this.layers.find((l) => l.id === item.data.layerId)
+    if (layer && (!layer.visible || layer.locked)) return false
     return true
   }
 
 
+  /** Click layer in panel: activate + select all members */
   selectById(id: string, additive = false) {
+    const layer = this.layers.find((l) => l.id === id)
+    if (layer) {
+      this.setActiveLayer(id)
+      const members = this.docLayer.children.filter(
+        (c) => String(c.data?.layerId) === id && !c.data?.locked && c.visible,
+      )
+      if (additive) {
+        const set = new Set(this.selected)
+        for (const m of members) {
+          if (set.has(m)) set.delete(m)
+          else set.add(m)
+        }
+        this.selectItems([...set])
+      } else {
+        this.selectItems(members)
+      }
+      return
+    }
     const item = this.docLayer.children.find((c) => c.data.cfId === id)
     if (!item || item.data.locked) return
     if (additive) {
@@ -1086,63 +1153,292 @@ export class CutForgeEditor {
     }
   }
 
+  setActiveLayer(id: string) {
+    if (!this.layers.some((l) => l.id === id)) return
+    this.activeLayerId = id
+    this.notify()
+  }
+
   setLayerVisible(id: string, visible: boolean) {
-    const item = this.docLayer.children.find((c) => c.data.cfId === id)
-    if (!item) return
+    const layer = this.layers.find((l) => l.id === id)
+    if (!layer) return
     const before = this.snapshotDoc()
-    item.visible = visible
-    if (!visible) this.selected = this.selected.filter((s) => s !== item)
+    layer.visible = visible
+    for (const item of this.docLayer.children) {
+      if (String(item.data?.layerId) === id) {
+        item.visible = visible
+        if (!visible) this.selected = this.selected.filter((s) => s !== item)
+      }
+    }
     this.history.pushBefore(before)
     this.drawHandles()
+    this.status = visible
+      ? `Layer “${layer.name}” shown`
+      : `Layer “${layer.name}” hidden`
     this.notify()
   }
 
   setLayerLocked(id: string, locked: boolean) {
-    const item = this.docLayer.children.find((c) => c.data.cfId === id)
-    if (!item) return
+    const layer = this.layers.find((l) => l.id === id)
+    if (!layer) return
     const before = this.snapshotDoc()
-    item.data.locked = locked
-    if (locked) this.selected = this.selected.filter((s) => s !== item)
+    layer.locked = locked
+    for (const item of this.docLayer.children) {
+      if (String(item.data?.layerId) === id) {
+        item.data.locked = locked
+        if (locked) this.selected = this.selected.filter((s) => s !== item)
+      }
+    }
     this.history.pushBefore(before)
     this.drawHandles()
     this.notify()
   }
 
   renameLayer(id: string, name: string) {
-    const item = this.docLayer.children.find((c) => c.data.cfId === id)
-    if (!item) return
+    const layer = this.layers.find((l) => l.id === id)
+    if (!layer) return
     const before = this.snapshotDoc()
-    item.data.name = name.trim() || item.data.name
+    layer.name = name.trim() || layer.name
     this.history.pushBefore(before)
     this.notify()
   }
 
+  /** Reorder layers in the panel (cut order). up = toward top / cut earlier. */
   reorderLayer(id: string, direction: 'up' | 'down' | 'top' | 'bottom') {
-    const item = this.docLayer.children.find((c) => c.data.cfId === id)
-    if (!item) return
+    const idx = this.layers.findIndex((l) => l.id === id)
+    if (idx < 0) return
     const before = this.snapshotDoc()
-    const kids = this.docLayer.children
-    const idx = kids.indexOf(item)
-    if (direction === 'top') item.bringToFront()
-    else if (direction === 'bottom') item.sendToBack()
-    else if (direction === 'up' && idx < kids.length - 1) item.insertAbove(kids[idx + 1])
-    else if (direction === 'down' && idx > 0) item.insertBelow(kids[idx - 1])
+    const arr = [...this.layers]
+    const [layer] = arr.splice(idx, 1)
+    if (direction === 'top') arr.unshift(layer)
+    else if (direction === 'bottom') arr.push(layer)
+    else if (direction === 'up' && idx > 0) arr.splice(idx - 1, 0, layer)
+    else if (direction === 'down' && idx < this.layers.length)
+      arr.splice(idx + 1, 0, layer)
+    else {
+      arr.splice(idx, 0, layer)
+      return
+    }
+    this.layers = arr
     this.history.pushBefore(before)
     this.notify()
   }
 
   moveLayer(id: string, toIndexFromTop: number) {
-    const kids = [...this.docLayer.children]
-    const item = kids.find((c) => c.data.cfId === id)
-    if (!item) return
+    const idx = this.layers.findIndex((l) => l.id === id)
+    if (idx < 0) return
     const before = this.snapshotDoc()
-    // visual list is reversed (top = last child)
-    const targetIndex = kids.length - 1 - toIndexFromTop
-    item.remove()
-    this.docLayer.insertChild(Math.max(0, Math.min(targetIndex, this.docLayer.children.length)), item)
+    const arr = [...this.layers]
+    const [layer] = arr.splice(idx, 1)
+    const ti = Math.max(0, Math.min(toIndexFromTop, arr.length))
+    arr.splice(ti, 0, layer)
+    this.layers = arr
     this.history.pushBefore(before)
     this.notify()
   }
+
+  addLayer(cutType: CutType = 'cut'): string {
+    const before = this.snapshotDoc()
+    const layer = createLayer({
+      cutType,
+      name: cutType[0].toUpperCase() + cutType.slice(1),
+    })
+    this.layers = [layer, ...this.layers]
+    this.activeLayerId = layer.id
+    this.history.pushBefore(before)
+    this.status = `Added layer “${layer.name}”`
+    this.notify()
+    return layer.id
+  }
+
+  duplicateLayer(id: string) {
+    const src = this.layers.find((l) => l.id === id)
+    if (!src) return
+    const before = this.snapshotDoc()
+    const copy2 = createLayer({
+      name: `${src.name} copy`,
+      color: src.color,
+      cutType: src.cutType,
+      power: src.power,
+      speed: src.speed,
+      passes: src.passes,
+      visible: src.visible,
+      locked: false,
+    })
+    const idx = this.layers.findIndex((l) => l.id === id)
+    const arr = [...this.layers]
+    arr.splice(idx, 0, copy2)
+    this.layers = arr
+    this.docLayer.activate()
+    const created: paper.Item[] = []
+    for (const item of [...this.docLayer.children]) {
+      if (String(item.data?.layerId) !== id) continue
+      const json = item.exportJSON({ asString: true }) as string
+      const clone = paper.project.importJSON(json) as paper.Item | null
+      if (!clone) continue
+      clone.data.cfId = nextId()
+      clone.data.layerId = copy2.id
+      if (clone.layer !== this.docLayer) this.docLayer.addChild(clone)
+      created.push(clone)
+    }
+    this.activeLayerId = copy2.id
+    this.history.pushBefore(before)
+    this.selectItems(created)
+    this.status = `Duplicated layer “${src.name}” (${created.length} objects)`
+    this.notify()
+  }
+
+  deleteLayer(id: string) {
+    if (this.layers.length <= 1) {
+      this.status = 'Cannot delete the last layer'
+      this.notify()
+      return
+    }
+    const layer = this.layers.find((l) => l.id === id)
+    if (!layer) return
+    const members = this.docLayer.children.filter(
+      (c) => String(c.data?.layerId) === id,
+    )
+    if (
+      members.length &&
+      !window.confirm(
+        `Delete layer “${layer.name}” and its ${members.length} object(s)?`,
+      )
+    ) {
+      return
+    }
+    const before = this.snapshotDoc()
+    for (const item of members) item.remove()
+    this.layers = this.layers.filter((l) => l.id !== id)
+    if (this.activeLayerId === id) this.activeLayerId = this.layers[0].id
+    this.selected = this.selected.filter((s) => !members.includes(s))
+    this.history.pushBefore(before)
+    this.drawHandles()
+    this.status = `Deleted layer “${layer.name}”`
+    this.notify()
+  }
+
+  updateLayer(
+    id: string,
+    partial: Partial<
+      Pick<
+        CfLayer,
+        | 'name'
+        | 'color'
+        | 'cutType'
+        | 'power'
+        | 'speed'
+        | 'passes'
+        | 'visible'
+        | 'locked'
+      >
+    >,
+  ) {
+    const layer = this.layers.find((l) => l.id === id)
+    if (!layer) return
+    const before = this.snapshotDoc()
+    Object.assign(layer, partial)
+    if (partial.cutType) {
+      for (const item of this.docLayer.children) {
+        if (String(item.data?.layerId) !== id) continue
+        item.data.cutType = partial.cutType
+        applyCutTypeVisual(item, partial.cutType, {
+          ...styleFromItem(item),
+          cutType: partial.cutType,
+          strokeColor: layer.color,
+        })
+      }
+    }
+    if (partial.color) {
+      for (const item of this.docLayer.children) {
+        if (String(item.data?.layerId) !== id) continue
+        item.data.strokeColor = partial.color
+        try {
+          ;(item as paper.Path).strokeColor =
+            partial.color as unknown as paper.Color
+        } catch {
+          /* */
+        }
+      }
+    }
+    if (partial.visible != null || partial.locked != null) {
+      this.syncItemsToLayerFlags()
+    }
+    this.history.pushBefore(before)
+    this.notify()
+  }
+
+  moveSelectionToLayer(layerId: string) {
+    if (!this.layers.some((l) => l.id === layerId)) return
+    const layer = this.layers.find((l) => l.id === layerId)!
+    if (layer.locked) {
+      this.status = 'Target layer is locked'
+      this.notify()
+      return
+    }
+    const items = this.selected.filter((i) => !i.data.locked && i.visible)
+    if (!items.length) return
+    const before = this.snapshotDoc()
+    for (const item of items) {
+      item.data.layerId = layerId
+      item.data.cutType = layer.cutType
+      applyCutTypeVisual(item, layer.cutType, {
+        ...styleFromItem(item),
+        cutType: layer.cutType,
+        strokeColor: layer.color,
+      })
+      item.visible = layer.visible
+    }
+    this.history.pushBefore(before)
+    this.status = `Moved ${items.length} to “${layer.name}”`
+    this.notify()
+  }
+
+  private ensureLayers() {
+    if (!this.layers.length) {
+      this.layers = defaultLayers()
+      this.activeLayerId = this.layers[0].id
+    }
+    if (!this.layers.some((l) => l.id === this.activeLayerId)) {
+      this.activeLayerId = this.layers[0].id
+    }
+  }
+
+  private ensureItemLayer(item: paper.Item) {
+    this.ensureLayers()
+    if (
+      !item.data.layerId ||
+      !this.layers.some((l) => l.id === item.data.layerId)
+    ) {
+      item.data.layerId = this.activeLayerId || this.layers[0].id
+    }
+  }
+
+  private attachToActiveLayer(item: paper.Item) {
+    this.ensureLayers()
+    const layer =
+      this.layers.find((l) => l.id === this.activeLayerId) || this.layers[0]
+    item.data.layerId = layer.id
+    item.data.cutType = layer.cutType
+    applyCutTypeVisual(item, layer.cutType, {
+      ...this.style,
+      cutType: layer.cutType,
+      strokeColor: layer.color,
+    })
+    item.visible = layer.visible
+    if (layer.locked) item.data.locked = true
+  }
+
+  private syncItemsToLayerFlags() {
+    for (const layer of this.layers) {
+      for (const item of this.docLayer.children) {
+        if (String(item.data?.layerId) !== layer.id) continue
+        item.visible = layer.visible
+        item.data.locked = layer.locked
+      }
+    }
+  }
+
 
   resizeToCanvas(width: number, height: number) {
     if (width < 10 || height < 10) return
@@ -1153,9 +1449,14 @@ export class CutForgeEditor {
   // --- internals ---
 
   private snapshotDoc(): string {
-    return JSON.stringify(
-      this.docLayer.children.map((c) => c.exportJSON({ asString: true })),
-    )
+    return JSON.stringify({
+      v: 2,
+      layers: this.layers.map(cloneLayer),
+      activeLayerId: this.activeLayerId,
+      objects: this.docLayer.children.map((c) =>
+        c.exportJSON({ asString: true }),
+      ),
+    })
   }
 
   private restoreDoc(raw: string) {
@@ -1165,13 +1466,36 @@ export class CutForgeEditor {
     this.docLayer.removeChildren()
     this.docLayer.activate()
     try {
-      const list = JSON.parse(raw) as string[]
+      const parsed = JSON.parse(raw) as
+        | string[]
+        | {
+            v?: number
+            layers?: CfLayer[]
+            activeLayerId?: string
+            objects?: string[]
+          }
+      let list: string[]
+      if (Array.isArray(parsed)) {
+        list = parsed
+      } else {
+        if (parsed.layers?.length) {
+          this.layers = parsed.layers.map(cloneLayer)
+          this.activeLayerId =
+            parsed.activeLayerId &&
+            this.layers.some((l) => l.id === parsed.activeLayerId)
+              ? parsed.activeLayerId
+              : this.layers[0].id
+        }
+        list = parsed.objects || []
+      }
       for (const s of list) {
         const item = paper.project.importJSON(s) as paper.Item | null
         if (!item) continue
         if (item.layer !== this.docLayer) this.docLayer.addChild(item)
         ensureMeta(item)
+        this.ensureItemLayer(item)
       }
+      this.syncItemsToLayerFlags()
     } catch {
       this.status = 'Undo/redo restore failed'
     }
@@ -1247,24 +1571,31 @@ export class CutForgeEditor {
       canBoolean: this.canBoolean(),
       hasText: this.hasSelectedText(),
       printAndCut: this.printAndCutMode,
+      activeLayerId: this.activeLayerId,
     }
   }
 
   private listLayers(): LayerInfo[] {
-    // Top of list = front of stack
-    return [...this.docLayer.children]
-      .reverse()
-      .map((item) => {
-        ensureMeta(item)
-        return {
-          id: String(item.data.cfId),
-          name: String(item.data.name),
-          visible: item.visible,
-          locked: !!item.data.locked,
-          selected: this.selected.includes(item),
-          className: item.className,
-        }
-      })
+    this.ensureLayers()
+    return this.layers.map((layer) => {
+      const members = this.docLayer.children.filter(
+        (c) => String(c.data?.layerId) === layer.id,
+      )
+      return {
+        id: layer.id,
+        name: layer.name,
+        color: layer.color,
+        visible: layer.visible,
+        locked: layer.locked,
+        active: layer.id === this.activeLayerId,
+        selected: members.some((m) => this.selected.includes(m)),
+        itemCount: members.length,
+        cutType: layer.cutType,
+        power: layer.power,
+        speed: layer.speed,
+        passes: layer.passes,
+      }
+    })
   }
 
   private notify() {
@@ -1333,9 +1664,9 @@ export class CutForgeEditor {
   }
 
   private styleNew(item: paper.Item) {
-    applyCutTypeVisual(item, this.style.cutType, this.style)
-    this.applyStrokeWidth(item)
     ensureMeta(item, this.autoName(this.toolLabel()))
+    this.attachToActiveLayer(item)
+    this.applyStrokeWidth(item)
   }
 
   private toolLabel() {

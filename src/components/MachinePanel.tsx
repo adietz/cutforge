@@ -54,6 +54,7 @@ export function MachinePanel({
   onClose,
   getItems,
   getBounds,
+  getLayerMap,
   page,
   onStatus,
   colorMap,
@@ -69,6 +70,10 @@ export function MachinePanel({
     width: number
     height: number
   } | null
+  getLayerMap?: () => Map<
+    string,
+    { power: number | null; speed: number | null; passes: number | null }
+  >
   page: PagePreset
   onStatus: (s: string) => void
   colorMap: LaserColorMapEntry[]
@@ -153,7 +158,11 @@ export function MachinePanel({
 
   const rebuildPreview = () => {
     try {
-      const g = generateGcode(getItems(), page, { presets, colorMap })
+      const g = generateGcode(getItems(), page, {
+        presets,
+        colorMap,
+        layerMap: getLayerMap?.(),
+      })
       setPreview(g)
       setErr(null)
     } catch (e) {
@@ -243,7 +252,11 @@ export function MachinePanel({
 
   const saveGcode = async () => {
     rebuildPreview()
-    const g = generateGcode(getItems(), page, { presets, colorMap })
+    const g = generateGcode(getItems(), page, {
+      presets,
+      colorMap,
+      layerMap: getLayerMap?.(),
+    })
     const result = await saveTextFile('gcode', 'cutforge-ikier-k1.nc', g)
     if (result) onStatus(`Saved ${result.name}`)
   }
