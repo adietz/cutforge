@@ -1,7 +1,7 @@
 # CutForge
 
 Daily-driver vector design for **IKIER K1** (GRBL diode laser) and **Silhouette** cutters.  
-**Tauri 2 + React + TypeScript + Paper.js** · **v1.8.2**
+**Tauri 2 + React + TypeScript + Paper.js** · **v1.8.3**
 
 ## Feature summary
 

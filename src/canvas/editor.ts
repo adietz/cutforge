@@ -869,7 +869,16 @@ export class CutForgeEditor {
     this.docLayer.activate()
   }
 
+  getTool(): Tool {
+    return this.tool
+  }
+
   setTool(tool: Tool) {
+    // No-op when unchanged — avoids resize/notify/React churn that blanked the canvas
+    if (tool === this.tool) {
+      this.ensureViewHealthy()
+      return
+    }
     this.tool = tool
     // Always end any in-progress pointer gesture when changing tools
     this.endPointerGesture(true)
@@ -890,6 +899,7 @@ export class CutForgeEditor {
       this.clearHandles()
     }
     this.status = this.toolTip(tool)
+    this.ensureViewHealthy()
     this.notify()
   }
 
@@ -1542,16 +1552,84 @@ export class CutForgeEditor {
 
 
   resizeToCanvas(width: number, height: number) {
-    if (width < 10 || height < 10) return
-    // Prefer setViewSize so Paper.js re-applies HiDPI pixelRatio + ctx.scale
+    // Ignore transient 0-size layouts (tool switch / React reflow) — those were
+    // blanking the view when Paper applied a tiny viewSize.
+    if (!Number.isFinite(width) || !Number.isFinite(height)) return
+    if (width < 32 || height < 32) return
+
     const vs = paper.view.viewSize
-    if (
-      Math.abs(vs.width - width) > 0.5 ||
-      Math.abs(vs.height - height) > 0.5
-    ) {
+    const changed =
+      Math.abs(vs.width - width) > 0.5 || Math.abs(vs.height - height) > 0.5
+    if (changed) {
+      // Preserve camera across buffer resize
+      const zoom = paper.view.zoom
+      const center = paper.view.center.clone()
       paper.view.viewSize = new paper.Size(width, height)
+      paper.view.zoom = zoom
+      paper.view.center = center
+      // Keep CSS fill; Paper may set inline px without [resize] — restore 100%
+      // so the canvas still fills .canvas-wrap after React re-renders.
+      this.canvas.style.width = '100%'
+      this.canvas.style.height = '100%'
+      this.reapplyPixelRatioScale()
     }
-    this.notify()
+    this.ensureViewHealthy()
+    // Do NOT notify() here — that re-entered React → ResizeObserver → blank loop
+  }
+
+  /** Re-apply HiDPI ctx.scale after anything that may have reset the 2D context. */
+  private reapplyPixelRatioScale() {
+    try {
+      const view = paper.view as paper.View & {
+        pixelRatio?: number
+        _pixelRatio?: number
+        _context?: CanvasRenderingContext2D
+      }
+      const ratio =
+        view.pixelRatio ||
+        view._pixelRatio ||
+        (typeof window !== 'undefined' ? window.devicePixelRatio : 1) ||
+        1
+      const ctx =
+        view._context ||
+        this.canvas.getContext('2d')
+      if (!ctx || ratio === 1) return
+      // Match Paper CanvasView._setElementSize: restore/save/scale
+      try {
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0)
+      } catch {
+        /* */
+      }
+    } catch {
+      /* */
+    }
+  }
+
+  /**
+   * Keep page/grid/doc visible after tool switches. Recovers from a blank
+   * canvas without wiping the project.
+   */
+  ensureViewHealthy() {
+    try {
+      if (this.guideLayer) this.guideLayer.visible = true
+      if (this.docLayer) this.docLayer.visible = true
+      if (this.overlayLayer) this.overlayLayer.visible = true
+      this.docLayer?.activate()
+      // Force a full redraw even if Paper thinks nothing changed
+      const view = paper.view as paper.View & {
+        _needsUpdate?: boolean
+        draw?: () => void
+        update?: (force?: boolean) => boolean
+      }
+      if (typeof view.update === 'function') {
+        view._needsUpdate = true
+        view.update(true)
+      } else if (typeof view.draw === 'function') {
+        view.draw()
+      }
+    } catch (err) {
+      console.error('ensureViewHealthy failed', err)
+    }
   }
 
   /**

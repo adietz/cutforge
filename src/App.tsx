@@ -105,7 +105,7 @@ export default function App() {
       setSnap(info.snap)
       setRegMarks(info.regMarks)
       setPrintAndCut(!!info.printAndCut)
-      setTool(info.tool)
+      setTool((prev) => (prev === info.tool ? prev : info.tool))
       setObjectCount(info.objectCount)
       setCanBoolean(info.canBoolean)
       setCanUngroup(!!info.canUngroup)

@@ -68,28 +68,63 @@ export function CanvasView({
     const wrap = wrapRef.current
     if (!canvas || !wrap) return
 
+    // CSS fills .canvas-wrap; we set viewSize from RO and re-assert 100% after
+    // Paper's setViewSize (which otherwise stamps inline px and can collapse).
+    canvas.style.width = '100%'
+    canvas.style.height = '100%'
+
     const editor = new CutForgeEditor(canvas, page)
     editorRef.current = editor
+    let rulersQueued = false
+    const queueRulers = () => {
+      if (rulersQueued) return
+      rulersQueued = true
+      requestAnimationFrame(() => {
+        rulersQueued = false
+        if (!wrapRef.current) return
+        drawRulers(
+          editor,
+          unit,
+          hRulerRef.current,
+          vRulerRef.current,
+          wrapRef.current,
+        )
+      })
+    }
     const off = editor.on((info) => {
       onUpdate(info)
-      drawRulers(editor, unit, hRulerRef.current, vRulerRef.current, wrap)
+      queueRulers()
     })
     const offCursor = editor.onCursor((c) => {
       onCursor(c)
     })
     setReady(true)
 
+    let roTimer = 0
     const ro = new ResizeObserver(() => {
-      const { clientWidth, clientHeight } = wrap
-      // Do NOT set canvas.width/height here — that resets the 2D context and
-      // wipes Paper.js HiDPI ctx.scale(devicePixelRatio), which made geometry
-      // appear up/left of the cursor. Paper.view.viewSize owns the buffer.
-      editor.resizeToCanvas(clientWidth, clientHeight)
-      drawRulers(editor, unit, hRulerRef.current, vRulerRef.current, wrap)
+      // Debounce: tool-switch React reflows were firing RO with a 0-size frame
+      // then a real size — applying 0 blanked Paper's view.
+      window.clearTimeout(roTimer)
+      roTimer = window.setTimeout(() => {
+        const { clientWidth, clientHeight } = wrap
+        if (clientWidth < 32 || clientHeight < 32) return
+        editor.resizeToCanvas(clientWidth, clientHeight)
+        canvas.style.width = '100%'
+        canvas.style.height = '100%'
+        queueRulers()
+      }, 16)
     })
     ro.observe(wrap)
+    // Immediate first size (after layout)
+    requestAnimationFrame(() => {
+      const { clientWidth, clientHeight } = wrap
+      editor.resizeToCanvas(clientWidth, clientHeight)
+      editor.ensureViewHealthy()
+      queueRulers()
+    })
 
     return () => {
+      window.clearTimeout(roTimer)
       off()
       offCursor()
       ro.disconnect()
@@ -101,7 +136,14 @@ export function CanvasView({
   }, [])
 
   useEffect(() => {
-    editorRef.current?.setTool(tool)
+    const ed = editorRef.current
+    if (!ed) return
+    // Skip if editor already on this tool (setTool no-ops, but avoid effect churn)
+    if (ed.getTool() === tool) {
+      ed.ensureViewHealthy()
+      return
+    }
+    ed.setTool(tool)
   }, [tool, editorRef])
 
   useEffect(() => {
