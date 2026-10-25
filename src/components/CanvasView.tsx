@@ -4,12 +4,14 @@ import { CutForgeEditor } from '../canvas/editor'
 import type { DocStyle, EditorSnapshot, PagePreset, Tool, Unit } from '../types'
 import { INCH_TO_MM, PX_PER_MM } from '../types'
 import { AlignBar } from './AlignBar'
-import type { AlignMode } from '../types'
+import { ContextMenu } from './ContextMenu'
+import type { AlignMode, ContextMenuAction } from '../types'
 
 const RULER = 22
 
 const CURSOR: Record<Tool, string> = {
   select: 'default',
+  shape: 'crosshair',
   rect: 'crosshair',
   ellipse: 'crosshair',
   line: 'crosshair',
@@ -44,6 +46,12 @@ export function CanvasView({
   const hRulerRef = useRef<HTMLCanvasElement>(null)
   const vRulerRef = useRef<HTMLCanvasElement>(null)
   const [ready, setReady] = useState(false)
+  const [ctxMenu, setCtxMenu] = useState<{
+    x: number
+    y: number
+    items: ContextMenuAction[]
+    point: { x: number; y: number }
+  } | null>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -114,6 +122,25 @@ export function CanvasView({
         className="canvas-wrap"
         ref={wrapRef}
         style={{ cursor: CURSOR[tool] }}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          const ed = editorRef.current
+          const canvas = canvasRef.current
+          if (!ed || !canvas) return
+          const rect = canvas.getBoundingClientRect()
+          const pt = ed.viewToProject(e.clientX - rect.left, e.clientY - rect.top)
+          const items = ed.getContextMenuActions(pt)
+          if (!items?.length) {
+            setCtxMenu(null)
+            return
+          }
+          setCtxMenu({
+            x: e.clientX,
+            y: e.clientY,
+            items,
+            point: { x: pt.x, y: pt.y },
+          })
+        }}
       >
         <canvas ref={canvasRef} className="design-canvas" />
         {ready && objectCount === 0 && (
@@ -126,6 +153,19 @@ export function CanvasView({
           </div>
         )}
       </div>
+      {ctxMenu && (
+        <ContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          items={ctxMenu.items}
+          onClose={() => setCtxMenu(null)}
+          onAction={(id) => {
+            const ed = editorRef.current
+            if (!ed) return
+            ed.runContextMenuAction(id, ctxMenu.point)
+          }}
+        />
+      )}
     </div>
   )
 }

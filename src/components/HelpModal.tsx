@@ -9,7 +9,7 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
         onClick={(e) => e.stopPropagation()}
       >
         <header className="modal-header">
-          <h2>CutForge · v1.6</h2>
+          <h2>CutForge · v1.7</h2>
           <button type="button" className="btn" onClick={onClose}>
             Close
           </button>
@@ -18,9 +18,13 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
           <table className="shortcut-table">
             <tbody>
               {[
-                ['V R E L P F T', 'Tools'],
-                ['Shift', '15° / square / circle'],
+                ['V / A', 'Select / Shape (nodes)'],
+                ['R E L P F T', 'Draw tools'],
+                ['Dblclick segment / node', 'Add node at click / delete node'],
+                ['Shape: C / S', 'Cusp / Smooth selected node'],
+                ['Shift', '15° / square / multi-node'],
                 ['Ctrl/Cmd+A C V D / Z / S / O', 'Edit / Undo / Save / Open'],
+                ['Right-click', 'Context menu on shape / node'],
                 ['Space+drag / Wheel', 'Pan / Zoom'],
                 ['Esc / ?', 'Cancel / Help'],
               ].map(([k, v]) => (
@@ -44,6 +48,12 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
             optional S/F/passes overrides for K1. New shapes go on the active
             layer (double-click or +). Move selection via dropdown. Saved in
             .cutforge.
+            <br />
+            <strong>Shape editing (Corel-like):</strong> Press <kbd>A</kbd> or
+            double-click a path. Drag yellow nodes; Shift+click multi-select.
+            Double-click a segment to add a node at the click; double-click a
+            node to delete. Right-click for To line / To curve / Break / Join,
+            plus Cut/Copy/Order. Bezier handles appear on selected nodes.
             <br />
             <strong>Also:</strong> Nest · materials · K1 frame/jog · Import ·
             Print &amp; Cut.

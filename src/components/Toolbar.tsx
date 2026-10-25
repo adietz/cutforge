@@ -2,6 +2,7 @@ import type { Tool } from '../types'
 
 const TOOLS: { id: Tool; label: string; hint: string }[] = [
   { id: 'select', label: 'Select', hint: 'V' },
+  { id: 'shape', label: 'Shape', hint: 'A' },
   { id: 'rect', label: 'Rect', hint: 'R' },
   { id: 'ellipse', label: 'Ellipse', hint: 'E' },
   { id: 'line', label: 'Line', hint: 'L' },

@@ -1,7 +1,7 @@
 # CutForge
 
 Daily-driver vector design for **IKIER K1** (GRBL diode laser) and **Silhouette** cutters.  
-**Tauri 2 + React + TypeScript + Paper.js** · **v1.6.0**
+**Tauri 2 + React + TypeScript + Paper.js** · **v1.7.0**
 
 ## Feature summary
 
@@ -48,6 +48,15 @@ Each profile stores: name, type (laser GRBL / Silhouette), bed W×H mm, origin c
 
 See Help and `docs/IMPORT.md`.
 
+
+## Shape editing (Corel-like)
+
+- **Shape tool (`A`)** or **double-click** a path: edit nodes (vertices + bezier handles).
+- **Add node:** double-click a segment (inserts at the nearest point on that edge).
+- **Delete node:** double-click a node, or select node(s) + Delete; also via right-click.
+- **Move:** drag nodes (Shift+click multi-select). Drag white handles for curves.
+- **To line / To curve / Cusp / Smooth / Break / Join:** right-click menu (Shape mode).
+- Select tool still uses transform box; corner/edge handles resize both smaller and larger (trackpad-safe).
 
 ## Install from GitHub Releases
 

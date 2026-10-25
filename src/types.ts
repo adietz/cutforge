@@ -1,5 +1,6 @@
 export type Tool =
   | 'select'
+  | 'shape'
   | 'rect'
   | 'ellipse'
   | 'line'
@@ -111,3 +112,11 @@ export const DEFAULT_SNAP: SnapSettings = {
 
 export const CUTFORGE_VERSION = 2
 export const RECOVERY_KEY = 'cutforge-recovery-v1'
+
+
+export interface ContextMenuAction {
+  id: string
+  label: string
+  disabled?: boolean
+  separator?: boolean
+}
