@@ -10,6 +10,8 @@ commands.allow = [
   "serial_cancel_job",
   "serial_home",
   "serial_jog",
+  "serial_query_status",
+  "serial_go_origin",
   "serial_send_gcode",
   "list_silhouette_devices",
   "silhouette_send_gpgl",

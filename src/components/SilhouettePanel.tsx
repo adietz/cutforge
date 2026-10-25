@@ -4,6 +4,9 @@ import {
   DEFAULT_SILHOUETTE_PRESETS,
   type SilhouettePresets,
 } from '../machine/presets'
+import { cloneSilhouette, type MaterialPreset } from '../machine/materials'
+import { loadMaterials } from '../machine/materialsStore'
+import { MaterialsLibraryModal } from './MaterialsLibraryModal'
 import { generateGpgl, type RegMarkSeekMode } from '../machine/gpgl'
 import {
   listSilhouetteDevices,
@@ -31,6 +34,9 @@ export function SilhouettePanel({
 }) {
   const [printThenCut, setPrintThenCut] = useState(true)
   const [regMarkSeek, setRegMarkSeek] = useState<RegMarkSeekMode>('auto')
+  const [materials, setMaterials] = useState<MaterialPreset[]>(() => loadMaterials())
+  const [materialId, setMaterialId] = useState('sil-vinyl')
+  const [materialsOpen, setMaterialsOpen] = useState(false)
   const native = silhouetteUsbAvailable()
   const [devices, setDevices] = useState<SilhouetteDeviceInfo[]>([])
   const [selected, setSelected] = useState('')
@@ -80,6 +86,7 @@ export function SilhouettePanel({
 
   useEffect(() => {
     if (!open) return
+    setMaterials(loadMaterials())
     void refresh()
     rebuild()
   }, [open, refresh, rebuild])
@@ -154,7 +161,16 @@ export function SilhouettePanel({
     setPresets((p) => ({ ...p, [key]: { ...p[key], [field]: value } }))
   }
 
+  const applyMaterial = (id: string, fromList?: MaterialPreset[]) => {
+    setMaterialId(id)
+    const mat = (fromList || materials).find((m) => m.id === id)
+    if (!mat?.silhouette) return
+    setPresets(cloneSilhouette(mat.silhouette))
+    onStatus(`Material: ${mat.name}`)
+  }
+
   return (
+    <>
     <div className="modal-backdrop" onClick={onClose} role="presentation">
       <div
         className="modal modal-wide"
@@ -206,6 +222,31 @@ export function SilhouettePanel({
                 Refresh
               </button>
             </div>
+
+            <h3 style={{ marginTop: 12 }}>Material</h3>
+            <label className="field">
+              <span>Silhouette media preset</span>
+              <select
+                value={materialId}
+                onChange={(e) => applyMaterial(e.target.value)}
+              >
+                {materials
+                  .filter((m) => m.machine === 'silhouette')
+                  .map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="btn"
+              style={{ marginTop: 4 }}
+              onClick={() => setMaterialsOpen(true)}
+            >
+              Edit materials library…
+            </button>
 
             <h3 style={{ marginTop: 12 }}>Tool mapping</h3>
             <p className="hint tight">
@@ -331,5 +372,20 @@ export function SilhouettePanel({
         </div>
       </div>
     </div>
+    <MaterialsLibraryModal
+      open={materialsOpen}
+      onClose={() => {
+        setMaterialsOpen(false)
+        setMaterials(loadMaterials())
+      }}
+      filterMachine="silhouette"
+      onApplied={(mat) => {
+        const next = loadMaterials()
+        setMaterials(next)
+        applyMaterial(mat.id, next)
+      }}
+      onStatus={onStatus}
+    />
+    </>
   )
 }

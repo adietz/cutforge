@@ -86,3 +86,21 @@ export async function grblTcpSend(
 ): Promise<TcpSendResult> {
   return invoke<TcpSendResult>('grbl_tcp_send', { host, port, lines })
 }
+
+
+export interface GrblStatus {
+  raw: string
+  state: string
+  mposX: number | null
+  mposY: number | null
+  wposX: number | null
+  wposY: number | null
+}
+
+export async function serialQueryStatus(): Promise<GrblStatus> {
+  return invoke<GrblStatus>('serial_query_status')
+}
+
+export async function serialGoOrigin(): Promise<string> {
+  return invoke('serial_go_origin')
+}

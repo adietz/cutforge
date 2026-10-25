@@ -2,7 +2,9 @@
 export interface OpPreset {
   speed: number
   power: number
-  /** Engrave hatch spacing in mm */
+  /** Number of passes (cut/score/engrave) */
+  passes?: number
+  /** Engrave hatch spacing in mm (= interval / PPI-related) */
   hatchMm?: number
   /** Hatch line angle in degrees (0 = horizontal) */
   hatchAngleDeg?: number
@@ -22,11 +24,12 @@ export interface MachineLaserPresets {
 
 /** Defaults tuned for a diode GRBL laser (IKIER K1 class) — user must calibrate. */
 export const DEFAULT_IKIER_PRESETS: MachineLaserPresets = {
-  cut: { speed: 400, power: 1000 },
-  score: { speed: 800, power: 200 },
+  cut: { speed: 400, power: 1000, passes: 1 },
+  score: { speed: 800, power: 200, passes: 1 },
   engrave: {
     speed: 1800,
     power: 450,
+    passes: 1,
     hatchMm: 0.2,
     hatchAngleDeg: 0,
     crossHatch: false,
@@ -41,6 +44,7 @@ export interface SilhouetteOpPreset {
   pressure: number
   /** 'cut' = blade with offset; 'pen' = draw/sketch */
   tool: 'cut' | 'pen'
+  passes?: number
 }
 
 export interface SilhouettePresets {
@@ -51,8 +55,8 @@ export interface SilhouettePresets {
 }
 
 export const DEFAULT_SILHOUETTE_PRESETS: SilhouettePresets = {
-  cut: { speed: 5, pressure: 10, tool: 'cut' },
-  score: { speed: 8, pressure: 3, tool: 'cut' },
-  engrave: { speed: 8, pressure: 8, tool: 'pen' },
+  cut: { speed: 5, pressure: 10, tool: 'cut', passes: 1 },
+  score: { speed: 8, pressure: 3, tool: 'cut', passes: 1 },
+  engrave: { speed: 8, pressure: 8, tool: 'pen', passes: 1 },
   media: 132,
 }

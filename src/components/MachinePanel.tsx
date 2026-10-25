@@ -4,10 +4,16 @@ import {
   type MachineLaserPresets,
 } from '../machine/presets'
 import {
-  MATERIAL_PRESETS,
   clonePresets,
   materialById,
+  type MaterialPreset,
 } from '../machine/materials'
+import { loadMaterials } from '../machine/materialsStore'
+import { MaterialsLibraryModal } from './MaterialsLibraryModal'
+import {
+  buildFrameGcode,
+  paperBoundsToMachine,
+} from '../machine/frameGcode'
 import { gcodeToLines, generateGcode } from '../machine/gcode'
 import {
   estimateGcodeTime,
@@ -24,9 +30,12 @@ import {
   serialIsConnected,
   serialJog,
   serialSendGcode,
+  serialQueryStatus,
+  serialGoOrigin,
   grblTcpSend,
   type PortInfo,
   type SendProgress,
+  type GrblStatus,
 } from '../machine/serial'
 import {
   fileToImageData,
@@ -44,6 +53,7 @@ export function MachinePanel({
   open,
   onClose,
   getItems,
+  getBounds,
   page,
   onStatus,
   colorMap,
@@ -52,6 +62,13 @@ export function MachinePanel({
   open: boolean
   onClose: () => void
   getItems: () => paper.Item[]
+  /** Canvas-px bounds for framing (selection or whole job) */
+  getBounds: (preferSelection?: boolean) => {
+    x: number
+    y: number
+    width: number
+    height: number
+  } | null
   page: PagePreset
   onStatus: (s: string) => void
   colorMap: LaserColorMapEntry[]
@@ -72,7 +89,14 @@ export function MachinePanel({
   const [sending, setSending] = useState(false)
   const [progress, setProgress] = useState<SendProgress | null>(null)
   const [err, setErr] = useState<string | null>(null)
-  const [materialId, setMaterialId] = useState('plywood-3mm')
+  const [materials, setMaterials] = useState<MaterialPreset[]>(() => loadMaterials())
+  const [materialId, setMaterialId] = useState('basswood-3mm')
+  const [materialsOpen, setMaterialsOpen] = useState(false)
+  const [jogStep, setJogStep] = useState(10)
+  const [frameLowPower, setFrameLowPower] = useState(false)
+  const [framePower, setFramePower] = useState(10)
+  const [frameBusy, setFrameBusy] = useState(false)
+  const [grblStatus, setGrblStatus] = useState<GrblStatus | null>(null)
   const [rasterDpi, setRasterDpi] = useState(150)
   const [rasterMinP, setRasterMinP] = useState(80)
   const [rasterMaxP, setRasterMaxP] = useState(650)
@@ -94,13 +118,35 @@ export function MachinePanel({
 
   useEffect(() => {
     if (!open) return
+    setMaterials(loadMaterials())
     void refreshPorts()
     void serialIsConnected().then(setConnected).catch(() => setConnected(false))
     let un: (() => void) | undefined
     void onGrblProgress((p) => setProgress(p)).then((u) => {
       un = u
     })
+    let alive = true
+    const poll = async () => {
+      if (!alive) return
+      try {
+        const ok = await serialIsConnected()
+        if (!alive) return
+        setConnected(ok)
+        if (ok) {
+          const st = await serialQueryStatus()
+          if (alive) setGrblStatus(st)
+        } else {
+          setGrblStatus(null)
+        }
+      } catch {
+        /* ignore poll errors */
+      }
+    }
+    void poll()
+    const iv = window.setInterval(() => void poll(), 2000)
     return () => {
+      alive = false
+      window.clearInterval(iv)
       un?.()
     }
   }, [open, refreshPorts])
@@ -291,16 +337,72 @@ export function MachinePanel({
     }
   }
 
-  const applyMaterial = (id: string) => {
+  const applyMaterial = (id: string, fromList?: MaterialPreset[]) => {
     setMaterialId(id)
     if (id === 'custom') return
-    const mat = materialById(id)
+    const mat = materialById(id, fromList || materials)
+    if (!mat.presets) {
+      onStatus(`Material “${mat.name}” has no laser presets`)
+      return
+    }
     setPresets(clonePresets(mat.presets))
     if (mat.colorMap?.length) onColorMap(mat.colorMap.map((e) => ({ ...e })))
     onStatus(`Material: ${mat.name} (calibrate on scrap)`)
   }
 
+  const runFrame = async (preferSelection: boolean) => {
+    const b = getBounds(preferSelection)
+    if (!b || b.width < 1 || b.height < 1) {
+      setErr('Nothing to frame — draw or select paths')
+      return
+    }
+    const box = paperBoundsToMachine(b, page)
+    const lines = buildFrameGcode(box, {
+      feed: presets.travel,
+      laserPower: frameLowPower ? framePower : 0,
+    })
+    const via =
+      connected
+        ? 'USB'
+        : native
+          ? 'Wi‑Fi (experimental)'
+          : null
+    if (!via) {
+      setErr('Connect USB or use desktop Wi‑Fi send for framing')
+      return
+    }
+    if (
+      !window.confirm(
+        `Frame ${preferSelection ? 'selection' : 'job'} bbox ` +
+          `${(box.maxX - box.minX).toFixed(1)}×${(box.maxY - box.minY).toFixed(1)} mm via ${via}?\n` +
+          (frameLowPower
+            ? `Low-power laser ON at S${framePower} while tracing.\n`
+            : 'Laser OFF (M5) — outline only.\n') +
+          'This is NOT a cut.',
+      )
+    ) {
+      return
+    }
+    setFrameBusy(true)
+    setErr(null)
+    try {
+      if (connected) {
+        const result = await serialSendGcode(lines)
+        if (result.error) setErr(result.error)
+        else onStatus(`Frame done (${result.sent} lines, laser off)`)
+      } else {
+        const r = await grblTcpSend(wifiHost, wifiPort, lines)
+        onStatus(`Frame via Wi‑Fi: ${r.message}`)
+      }
+    } catch (e) {
+      setErr(String(e))
+    } finally {
+      setFrameBusy(false)
+    }
+  }
+
   return (
+    <>
     <div className="modal-backdrop" onClick={onClose} role="presentation">
       <div
         className="modal modal-wide"
@@ -400,49 +502,167 @@ export function MachinePanel({
               </button>
             </div>
 
-            <h3 style={{ marginTop: 14 }}>Jog (mm, laser off)</h3>
+            <p className="hint tight" style={{ marginTop: 8 }}>
+              Status:{' '}
+              {connected ? (
+                <strong className="ok-text">USB connected</strong>
+              ) : (
+                <span>disconnected</span>
+              )}
+              {grblStatus?.state ? ` · ${grblStatus.state}` : ''}
+              {grblStatus &&
+                (grblStatus.wposX != null || grblStatus.mposX != null) && (
+                  <>
+                    {' '}
+                    · pos X
+                    {(grblStatus.wposX ?? grblStatus.mposX)?.toFixed(2)} Y
+                    {(grblStatus.wposY ?? grblStatus.mposY)?.toFixed(2)}
+                    {grblStatus.wposX != null ? ' (WPos)' : ' (MPos)'}
+                  </>
+                )}
+            </p>
+
+            <h3 style={{ marginTop: 14 }}>Jog (laser off)</h3>
+            <label className="field" style={{ width: 120 }}>
+              <span>Step mm</span>
+              <select
+                value={jogStep}
+                onChange={(e) => setJogStep(+e.target.value)}
+              >
+                <option value={1}>1 mm</option>
+                <option value={10}>10 mm</option>
+                <option value={50}>50 mm</option>
+              </select>
+            </label>
             <div className="jog-grid">
               {(
                 [
-                  [0, 10, 'Y+'],
-                  [-10, 0, 'X−'],
-                  [10, 0, 'X+'],
-                  [0, -10, 'Y−'],
+                  [0, 1, 'Y+'],
+                  [-1, 0, 'X−'],
+                  [1, 0, 'X+'],
+                  [0, -1, 'Y−'],
                 ] as const
-              ).map(([dx, dy, label]) => (
+              ).map(([sx, sy, label]) => (
                 <button
                   key={label}
                   type="button"
                   className="btn"
-                  disabled={!connected || sending}
+                  disabled={!connected || sending || frameBusy}
                   onClick={() =>
-                    void serialJog(dx, dy, 2000).catch((e) => setErr(String(e)))
+                    void serialJog(sx * jogStep, sy * jogStep, 2000)
+                      .then(() =>
+                        serialQueryStatus()
+                          .then(setGrblStatus)
+                          .catch(() => undefined),
+                      )
+                      .catch((e) => setErr(String(e)))
                   }
                 >
-                  {label} 10
+                  {label} {jogStep}
                 </button>
               ))}
+            </div>
+            <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn"
+                disabled={!connected || sending}
+                onClick={() =>
+                  void serialGoOrigin()
+                    .then((r) => onStatus(`Origin: ${r || 'G0 X0 Y0'}`))
+                    .catch((e) => setErr(String(e)))
+                }
+                title="Rapid to work origin X0 Y0, laser off"
+              >
+                Go origin
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={!connected}
+                onClick={() =>
+                  void serialQueryStatus()
+                    .then(setGrblStatus)
+                    .catch((e) => setErr(String(e)))
+                }
+              >
+                Refresh pos
+              </button>
+            </div>
+
+            <h3 style={{ marginTop: 14 }}>Frame (bbox only)</h3>
+            <p className="hint tight">
+              Traces the selection or whole job bounding box. Default laser off.
+              Optional low-power outline (not a cut).
+            </p>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={frameLowPower}
+                onChange={(e) => setFrameLowPower(e.target.checked)}
+              />
+              Low-power laser while framing
+            </label>
+            {frameLowPower && (
+              <label className="field" style={{ width: 100 }}>
+                <span>Frame S</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={framePower}
+                  onChange={(e) => setFramePower(+e.target.value)}
+                />
+              </label>
+            )}
+            <div className="row" style={{ gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn"
+                disabled={sending || frameBusy || (!connected && !native)}
+                onClick={() => void runFrame(true)}
+              >
+                {frameBusy ? 'Framing…' : 'Frame selection'}
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={sending || frameBusy || (!connected && !native)}
+                onClick={() => void runFrame(false)}
+              >
+                Frame job
+              </button>
             </div>
 
             <h3 style={{ marginTop: 14 }}>Material</h3>
             <label className="field">
-              <span>IKIER K1 starter preset</span>
+              <span>Laser material</span>
               <select
                 value={materialId}
                 onChange={(e) => applyMaterial(e.target.value)}
               >
-                {MATERIAL_PRESETS.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
+                {materials
+                  .filter((m) => m.machine === 'laser')
+                  .map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                      {m.thicknessMm != null ? ` (${m.thicknessMm} mm)` : ''}
+                    </option>
+                  ))}
               </select>
             </label>
             <p className="hint tight">
-              {materialById(materialId).description} Applies speed/power
-              {materialById(materialId).colorMap ? ' + color map' : ''}; edit
-              freely after.
+              {materialById(materialId, materials).description ||
+                'Applies speed/power (+ color map if set).'}
             </p>
+            <button
+              type="button"
+              className="btn"
+              style={{ marginTop: 4 }}
+              onClick={() => setMaterialsOpen(true)}
+            >
+              Edit materials library…
+            </button>
 
             <h3 style={{ marginTop: 14 }}>Laser color map</h3>
             <LaserColorMapEditor map={colorMap} onChange={onColorMap} compact />
@@ -662,5 +882,20 @@ export function MachinePanel({
         </div>
       </div>
     </div>
+    <MaterialsLibraryModal
+      open={materialsOpen}
+      onClose={() => {
+        setMaterialsOpen(false)
+        setMaterials(loadMaterials())
+      }}
+      filterMachine="laser"
+      onApplied={(mat) => {
+        const next = loadMaterials()
+        setMaterials(next)
+        applyMaterial(mat.id, next)
+      }}
+      onStatus={onStatus}
+    />
+    </>
   )
 }

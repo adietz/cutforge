@@ -17,6 +17,8 @@ pub fn run() {
       serial_grbl::serial_cancel_job,
       serial_grbl::serial_home,
       serial_grbl::serial_jog,
+      serial_grbl::serial_query_status,
+      serial_grbl::serial_go_origin,
       serial_grbl::serial_send_gcode,
       silhouette_usb::list_silhouette_devices,
       silhouette_usb::silhouette_send_gpgl,

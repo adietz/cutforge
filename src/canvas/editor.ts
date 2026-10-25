@@ -270,6 +270,21 @@ export class CutForgeEditor {
     return texts.length
   }
 
+  /** Bounding box of selection, or all export items if none selected (canvas px). */
+  getJobBounds(preferSelection = true): paper.Rectangle | null {
+    if (preferSelection) {
+      const sel = this.selected.filter((i) => !i.data.locked && i.visible)
+      const b = this.boundsOf(sel)
+      if (b) return b
+    }
+    const items = this.getExportItems({
+      includeRegMarks: false,
+      excludeLocked: true,
+      excludeHidden: true,
+    })
+    return this.boundsOf(items)
+  }
+
   hasRegistrationMarks() {
     return this.regMarksEnabled
   }

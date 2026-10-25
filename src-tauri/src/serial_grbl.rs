@@ -245,6 +245,107 @@ pub fn serial_jog(dx_mm: f64, dy_mm: f64, feed: f64) -> Result<String, String> {
     Ok(resp)
 }
 
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GrblStatus {
+    pub raw: String,
+    pub state: String,
+    pub mpos_x: Option<f64>,
+    pub mpos_y: Option<f64>,
+    pub wpos_x: Option<f64>,
+    pub wpos_y: Option<f64>,
+}
+
+#[tauri::command]
+pub fn serial_query_status() -> Result<GrblStatus, String> {
+    serial_write_raw("?")?;
+    let raw = drain_until_status(800)?;
+    Ok(parse_grbl_status(&raw))
+}
+
+#[tauri::command]
+pub fn serial_go_origin() -> Result<String, String> {
+    serial_write_raw("M5\nG90\nG0 X0 Y0\n")?;
+    let resp = drain_port(3000)?;
+    Ok(if resp.trim().is_empty() {
+        "G0 X0 Y0 (origin)".into()
+    } else {
+        resp
+    })
+}
+
+fn drain_until_status(timeout_ms: u64) -> Result<String, String> {
+    with_port_mut(|p| {
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        let mut buf = [0u8; 256];
+        let mut out = String::new();
+        while Instant::now() < deadline {
+            match p.read(&mut buf) {
+                Ok(0) => std::thread::sleep(Duration::from_millis(5)),
+                Ok(n) => out.push_str(&String::from_utf8_lossy(&buf[..n])),
+                Err(e) if e.kind() == std::io::ErrorKind::TimedOut => break,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(e) => return Err(format!("Read failed: {e}")),
+            }
+            if out.contains('<') && out.contains('>') {
+                break;
+            }
+        }
+        Ok(out)
+    })
+}
+
+fn parse_grbl_status(raw: &str) -> GrblStatus {
+    let mut state = String::new();
+    let mut mpos_x = None;
+    let mut mpos_y = None;
+    let mut wpos_x = None;
+    let mut wpos_y = None;
+    if let Some(start) = raw.find('<') {
+        if let Some(end) = raw[start..].find('>') {
+            let body = &raw[start + 1..start + end];
+            let parts: Vec<&str> = body.split('|').collect();
+            if let Some(s) = parts.first() {
+                state = s.trim().to_string();
+            }
+            for part in &parts {
+                if let Some(rest) = part.strip_prefix("MPos:") {
+                    let xy = parse_xy(rest);
+                    mpos_x = xy.0;
+                    mpos_y = xy.1;
+                }
+                if let Some(rest) = part.strip_prefix("WPos:") {
+                    let xy = parse_xy(rest);
+                    wpos_x = xy.0;
+                    wpos_y = xy.1;
+                }
+            }
+        }
+    }
+    GrblStatus {
+        raw: raw.trim().to_string(),
+        state,
+        mpos_x,
+        mpos_y,
+        wpos_x,
+        wpos_y,
+    }
+}
+
+fn parse_xy(s: &str) -> (Option<f64>, Option<f64>) {
+    let nums: Vec<f64> = s
+        .split(',')
+        .filter_map(|p| p.trim().parse().ok())
+        .collect();
+    (
+        nums.first().copied(),
+        nums.get(1).copied(),
+    )
+}
+
+
 /// Stream G-code lines to the machine. Emits `grbl-progress` events.
 #[tauri::command]
 pub fn serial_send_gcode(app: AppHandle, lines: Vec<String>) -> Result<SendProgress, String> {

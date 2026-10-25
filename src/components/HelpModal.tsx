@@ -9,7 +9,7 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
         onClick={(e) => e.stopPropagation()}
       >
         <header className="modal-header">
-          <h2>CutForge · v1.2</h2>
+          <h2>CutForge · v1.3</h2>
           <button type="button" className="btn" onClick={onClose}>
             Close
           </button>
@@ -34,12 +34,16 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
             </tbody>
           </table>
           <p className="hint">
-            <strong>Import:</strong> top bar → Import (SVG, DXF, AI/PDF, CDR,
-            EPS, EMF). Pure JS for SVG/DXF; desktop helpers (LibreOffice /
-            pdftocairo / gs / Inkscape) for the rest — see docs/IMPORT.md.
+            <strong>Materials:</strong> Send to K1 / Silhouette → Edit materials
+            library (add/edit/delete; localStorage). Apply to job for
+            speed/power/passes or Silhouette force.
             <br />
-            <strong>Also:</strong> Print &amp; Cut · K1 bitmap / Wi‑Fi · optical
-            Silhouette seek · kerf · materials.
+            <strong>K1 frame / jog:</strong> step 1/10/50 mm jog (laser off),
+            Home, Go origin, Frame selection/job (bbox outline; optional
+            low-power — never a cut). Status shows WPos/MPos when connected.
+            <br />
+            <strong>Also:</strong> Import AI/CDR/SVG · Print &amp; Cut · bitmap
+            engrave · Wi‑Fi TCP.
           </p>
         </div>
       </div>

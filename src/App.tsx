@@ -630,6 +630,11 @@ export default function App() {
             excludeHidden: true,
           }) ?? []
         }
+        getBounds={(preferSelection) => {
+          const b = editorRef.current?.getJobBounds(preferSelection !== false)
+          if (!b) return null
+          return { x: b.x, y: b.y, width: b.width, height: b.height }
+        }}
         page={page}
         onStatus={setStatus}
         colorMap={laserColorMap}

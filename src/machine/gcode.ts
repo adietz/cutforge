@@ -67,12 +67,16 @@ export function generateGcode(
           ? p.score
           : p.cut
     const preset = resolvePreset(item, cutType, base, colorMap)
-    if (cutType === 'engrave') {
-      emitEngrave(item, toMachine, preset, p.travel, lines)
-    } else if (cutType === 'score') {
-      emitVector(item, toMachine, preset, p.travel, lines, 'score')
-    } else {
-      emitVector(item, toMachine, preset, p.travel, lines, 'cut')
+    const passes = Math.max(1, Math.round(preset.passes ?? 1))
+    for (let pass = 0; pass < passes; pass++) {
+      if (passes > 1) lines.push(`; pass ${pass + 1}/${passes}`)
+      if (cutType === 'engrave') {
+        emitEngrave(item, toMachine, preset, p.travel, lines)
+      } else if (cutType === 'score') {
+        emitVector(item, toMachine, preset, p.travel, lines, 'score')
+      } else {
+        emitVector(item, toMachine, preset, p.travel, lines, 'cut')
+      }
     }
   }
 

@@ -115,20 +115,43 @@ export function generateGpgl(
     }
   }
 
-  emitGroup('CUT', flat.cut, presets.cut.pressure, presets.cut.speed, presets.cut.tool === 'pen')
-  emitGroup(
+  const runPasses = (
+    label: string,
+    list: paper.Item[],
+    pressure: number,
+    speed: number,
+    pen: boolean,
+    passes: number | undefined,
+  ) => {
+    const n = Math.max(1, Math.round(passes ?? 1))
+    for (let i = 0; i < n; i++) {
+      if (n > 1) cmds.push(`;${label} pass ${i + 1}/${n}`)
+      emitGroup(label, list, pressure, speed, pen)
+    }
+  }
+  runPasses(
+    'CUT',
+    flat.cut,
+    presets.cut.pressure,
+    presets.cut.speed,
+    presets.cut.tool === 'pen',
+    presets.cut.passes,
+  )
+  runPasses(
     'SCORE',
     flat.score,
     presets.score.pressure,
     presets.score.speed,
     presets.score.tool === 'pen',
+    presets.score.passes,
   )
-  emitGroup(
+  runPasses(
     'ENGRAVE',
     flat.engrave,
     presets.engrave.pressure,
     presets.engrave.speed,
     presets.engrave.tool === 'pen',
+    presets.engrave.passes,
   )
 
   cmds.push('H')
