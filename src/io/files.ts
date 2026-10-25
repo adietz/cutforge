@@ -1,11 +1,12 @@
 import { isTauri } from '@tauri-apps/api/core'
 
-export type FileKind = 'cutforge' | 'svg' | 'dxf'
+export type FileKind = 'cutforge' | 'svg' | 'dxf' | 'gcode'
 
 const FILTERS: Record<FileKind, { name: string; extensions: string[] }> = {
   cutforge: { name: 'CutForge Project', extensions: ['cutforge', 'json'] },
   svg: { name: 'SVG', extensions: ['svg'] },
   dxf: { name: 'DXF', extensions: ['dxf'] },
+  gcode: { name: 'G-code', extensions: ['nc', 'gcode', 'gc'] },
 }
 
 function browserDownload(filename: string, text: string, mime: string) {
@@ -57,7 +58,9 @@ export async function openTextFile(
       ? '.cutforge,application/json'
       : kind === 'svg'
         ? '.svg,image/svg+xml'
-        : '.dxf'
+        : kind === 'gcode'
+          ? '.nc,.gcode,.gc,text/plain'
+          : '.dxf'
   const file = await browserOpenText(accept)
   if (!file) return null
   return { path: null, name: file.name, text: file.text }
@@ -75,7 +78,9 @@ export async function saveTextFile(
       ? 'image/svg+xml'
       : kind === 'dxf'
         ? 'application/dxf'
-        : 'application/json'
+        : kind === 'gcode'
+          ? 'text/plain'
+          : 'application/json'
 
   if (isTauri()) {
     const { save } = await import('@tauri-apps/plugin-dialog')

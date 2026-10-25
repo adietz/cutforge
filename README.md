@@ -1,90 +1,77 @@
 # CutForge
 
-Cross-platform vector design for **laser cutting / engraving** (IKIER K1 and
-friends) and **Silhouette** (Cameo / Portrait). **Tauri 2 + React + TypeScript + Paper.js**.
+Vector design for **laser** (IKIER K1 / GRBL diode) and **Silhouette**.  
+**Tauri 2 + React + TypeScript + Paper.js**.
 
-## Features (v0.6.0)
+## Features (v0.7.0)
 
-- Dark UI: toolbar · rulers · align · canvas · inspector · layers
-- Page presets including **IKIER K1 410×410 mm**, Cameo 4 / Plus, Portrait, Letter, A4
-- Tools: select, rect, ellipse, line, polygon, freehand, text
-- Marquee + Shift multi-select; move / resize / rotate; undo/redo
-- Snap: grid, edges/endpoints, smart guides
-- **Shift → 15°** for lines / polygons / rotate; square/circle for rect/ellipse
-- `.cutforge` projects; autosave recovery; native Tauri dialogs
-- Path ops: unite / subtract / intersect; kerf outset/inset
-- Silhouette registration marks; Cut · Score · Engrave; hairline strokes
-- **Text → outlines** (bundled OFL Inter / Open Sans via opentype.js)
-- **Image tracing** (PNG/JPG → cut paths via imagetracer.js)
-- **Machine export** — profiled one-click SVG/DXF for IKIER K1, Silhouette,
-  LightBurn, Glowforge, generic laser
+- Editor: tools, snap, booleans, layers, undo, `.cutforge` projects
+- Text → outlines (OFL fonts) · image tracing
+- **Send to K1** — generate GRBL G-code and stream over USB serial (bypasses LightBurn)
+- Machine file export (SVG/DXF) still available; LightBurn is **optional**
+- Page presets including IKIER K1 **410×410 mm**
 
-## Machine export (v0.6)
+## Send to IKIER K1 (v0.7)
 
-Top bar → **Machine export**.
+Top bar → **Send to K1** (desktop app only).
 
-| Profile | Default | Notes |
-|---------|---------|--------|
-| **IKIER K1** (primary laser) | LightBurn SVG, mm, 410×410 | Switch to DXF; open in LightBurn or LaserGRBL |
-| Silhouette Cameo 4 / Plus / Portrait | Hairline SVG, inches | Studio import; optional reg marks |
-| Generic laser | DXF mm (or SVG) | Layers CUT / SCORE / ENGRAVE |
-| LightBurn-friendly SVG | Colored groups | Red cut / blue score / black engrave |
-| Glowforge-style SVG | Color-mapped SVG | Simple stroke/fill mapping |
+1. Plug the K1 via **USB Type-C**.
+2. **Refresh ports** → select the serial device → baud **115200** → **Connect**.
+3. Optional: **Home** (`$H` if enabled on the controller), **Jog** (laser stays off).
+4. Set Cut / Score / Engrave **speed** (mm/min) and **power** (GRBL `S`, usually 0–1000).
+5. Preview G-code · **Save .nc** dry-run · or **Send job**.
+6. **Cancel / laser off** or disconnect always attempts **M5**.
 
-**Options:** units, hairline, registration marks, flatten text→outlines
-(warns if text remains), exclude hidden/locked, apply suggested page size.
+### G-code conventions
 
-**Coordinates**
+| | |
+|--|--|
+| Units | mm (`G21`), absolute (`G90`) |
+| Origin | Page **lower-left**, **Y-up** (canvas Y-down is flipped) |
+| Cut | Vector `G1` with `M4 S…` |
+| Score | Same, lower default power / higher speed |
+| Engrave | Horizontal hatch fill (spacing configurable); open paths stroke |
+| End | `M5`, optional return to `X0 Y0`, `M2` |
 
-- **SVG:** origin top-left, **Y-down**
-- **DXF:** origin bottom-left, **Y-up** (mm `$INSUNITS`)
-- LightBurn typically uses a lower-left job origin on the machine after import
+**Safety:** wear eye protection / follow your laser’s rules. Defaults are starting
+points only — **calibrate on scrap**. Cancel and disconnect command laser off.
 
-**Limit:** CutForge writes files only — **no USB / G-code send** to the IKIER
-K1 or Silhouette. Use LightBurn, LaserGRBL, or Silhouette Studio to run jobs.
+### Platform notes
+
+| | |
+|--|--|
+| **Works** | CutForge **Tauri** desktop (Windows / macOS / Linux) |
+| **Not in v0.7** | Browser `npm run dev` serial (preview + save `.nc` only) · Wi‑Fi / vendor app |
+| Linux | User in `dialout` (or `uucp`) group for `/dev/ttyUSB*` / `ttyACM*` |
+| macOS | Allow USB accessories; prefer `/dev/cu.*` |
+| Windows | Install CH340 / CP210x drivers if the port is missing |
+
+## File export (optional)
+
+**Export file** → machine profiles (IKIER K1 SVG/DXF, Silhouette hairline SVG,
+LightBurn colors, Glowforge). Use if you still want LightBurn/LaserGRBL/Studio.
 
 ## Run
 
 ```bash
 cd cutforge
 npm install
-npm run dev          # web UI
-npm run tauri:dev    # desktop
+npm run dev          # web UI (no serial send)
+npm run tauri:dev    # desktop with USB serial
 npm run tauri:build
 ```
-
-## Shortcuts
-
-| Key | Action |
-|-----|--------|
-| V R E L P F T | Tools |
-| Shift | 15° snap; square/circle |
-| Ctrl/Cmd+A C V D | Select all / Copy / Paste / Duplicate |
-| Ctrl/Cmd+Z · Shift+Z · Y | Undo / Redo |
-| Ctrl/Cmd+S · Shift+S · O | Save / Save As / Open |
-| Space+drag / Wheel | Pan / Zoom |
-| Delete / Esc / ? | Delete / Cancel / Help |
-
-## Text to outlines & image tracing
-
-See inspector **Text & images**. Outlines use offline OFL fonts. Tracing is
-best for high-contrast logos (images >1200px are downscaled).
-
-## Known issues / limits
-
-- No USB / G-code / machine send (export files only)
-- Kerf offset is scale-about-center, not a true parallel curve
-- Outlines: Regular Inter / Open Sans only; multi-line PointText → one string
-- Image tracer ≠ Potrace; photos get noisy
-- Booleans need closed paths
-- Undo does not restore snap/reg-mark *settings*
 
 ## Layout
 
 ```
-src/export/   SVG + DXF + machine profiles (IKIER K1, Silhouette, …)
-src/canvas/   editor, snap, booleans, textOutlines, imageTrace
-src/fonts/    bundled font catalog
-public/fonts/ Inter + Open Sans (OFL)
-src-tauri/    Tauri 2
+src/machine/     G-code + serial bridge
+src/export/      SVG / DXF / profiles
+src-tauri/src/serial_grbl.rs   GRBL serial (list/connect/stream/cancel)
 ```
+
+## Limits
+
+- No Wi‑Fi / IKIER app bridge
+- Engrave hatch is simple (not adaptive/bitmap)
+- Homing requires GRBL hard-limits / `$H` enabled
+- Power scale assumes GRBL `$30≈1000` — adjust presets to your firmware

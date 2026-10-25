@@ -10,7 +10,7 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
         onClick={(e) => e.stopPropagation()}
       >
         <header className="modal-header">
-          <h2>CutForge shortcuts · v0.6</h2>
+          <h2>CutForge shortcuts · v0.7</h2>
           <button type="button" className="btn" onClick={onClose}>
             Close
           </button>
@@ -25,7 +25,7 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
                 ['Drag empty / Shift+click', 'Marquee / toggle (Shift does not drag)'],
                 ['Ctrl/Cmd+A C V D', 'Select all / Copy / Paste / Duplicate'],
                 ['Ctrl/Cmd+Z / Shift+Z / Y', 'Undo / Redo'],
-                ['Ctrl/Cmd+S / Shift+S / O', 'Save / Save As / Open'],
+                ['Ctrl/Cmd+S / Shift+S · O', 'Save / Save As / Open'],
                 ['Space+drag / Wheel', 'Pan / Zoom'],
                 ['Delete / Backspace', 'Delete selection'],
                 ['Esc', 'Cancel drawing, else clear selection'],
@@ -41,19 +41,16 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
             </tbody>
           </table>
           <p className="hint">
-            <strong>Machine export:</strong> top bar → <em>Machine export</em>.
-            Primary laser profile is <strong>IKIER K1</strong> (410×410 mm) —
-            LightBurn-colored SVG (Cut=red, Score=blue, Engrave=black) or mm DXF.
-            Also Silhouette Cameo/Portrait hairline SVG, generic laser, Glowforge.
-            Open files in LightBurn / LaserGRBL / Studio —{' '}
-            <strong>CutForge does not send G-code or USB</strong> yet.
+            <strong>Send to K1:</strong> top bar → stream GRBL G-code over USB
+            serial (115200). Cut / Score / Engrave use speed &amp; power presets;
+            engrave uses a simple hatch. Cancel / disconnect commands{' '}
+            <strong>M5 laser off</strong>. Desktop (Tauri) only — not the browser.
             <br />
-            <strong>Coords:</strong> SVG origin top-left (Y-down); DXF origin
-            bottom-left (Y-up). LightBurn job origin is typically lower-left on
-            the machine.
+            <strong>File export</strong> (SVG/DXF) remains available; LightBurn /
+            LaserGRBL are <em>optional</em>, not required.
             <br />
-            <strong>Text → outlines / Trace image:</strong> inspector — OFL fonts
-            offline; imagetracer for logos/line art.
+            G-code origin: page lower-left, Y-up, mm. Calibrate power/speed on scrap.
+            No Wi‑Fi path in v0.7.
           </p>
         </div>
       </div>

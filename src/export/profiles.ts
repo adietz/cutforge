@@ -37,7 +37,7 @@ export const MACHINE_PROFILES: MachineProfile[] = [
     id: 'ikier-k1',
     name: 'IKIER K1',
     description:
-      'Primary diode/GRBL laser profile — 410×410 mm. LightBurn-colored SVG or mm DXF for LightBurn / LaserGRBL.',
+      'Primary diode/GRBL laser — 410×410 mm. Prefer Send to K1 (G-code/USB). Optional LightBurn-colored SVG or mm DXF.',
     format: 'svg',
     allowFormatSwitch: true,
     unit: 'mm',
@@ -51,7 +51,7 @@ export const MACHINE_PROFILES: MachineProfile[] = [
     coordNote:
       'SVG: origin top-left, Y-down (LightBurn imports and remaps). DXF: origin bottom-left, Y-up (common CAD/LaserGRBL). LightBurn job origin is typically lower-left on the machine.',
     workflowNote:
-      'Open the exported file in LightBurn (Mac/Windows) or LaserGRBL (Windows). CutForge does not send G-code or talk to the laser over USB yet.',
+      'Prefer top bar → Send to K1 for direct USB G-code. File export is optional (LightBurn / LaserGRBL) if you still want it.',
   },
   {
     id: 'silhouette-cameo4',

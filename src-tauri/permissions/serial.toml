@@ -1,0 +1,14 @@
+[[permission]]
+identifier = "allow-serial"
+description = "List serial ports and talk to a GRBL laser (IKIER K1)"
+commands.allow = [
+  "list_serial_ports",
+  "serial_connect",
+  "serial_disconnect",
+  "serial_is_connected",
+  "serial_write_line",
+  "serial_cancel_job",
+  "serial_home",
+  "serial_jog",
+  "serial_send_gcode",
+]

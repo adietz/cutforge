@@ -658,3 +658,73 @@ kbd {
     grid-template-columns: 1fr;
   }
 }
+
+.machine-panel-body {
+  display: grid;
+  grid-template-columns: minmax(300px, 1.1fr) minmax(240px, 0.9fr);
+  gap: 16px;
+  max-height: 70vh;
+}
+
+.machine-panel-left h3,
+.machine-panel-right h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.jog-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(64px, 1fr));
+  gap: 6px;
+}
+
+.preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0;
+  font-size: 12px;
+}
+
+.preset-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: #9aa3b5;
+}
+
+.preset-row input {
+  width: 80px;
+}
+
+.gcode-preview {
+  margin: 0;
+  padding: 10px;
+  background: #0e1015;
+  border: 1px solid #2a3140;
+  border-radius: 8px;
+  max-height: 55vh;
+  overflow: auto;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #c5cad6;
+}
+
+.btn.danger {
+  background: #5a1e24;
+  border-color: #8b2f38;
+  color: #ffb4b4;
+}
+
+.btn.danger:hover:not(:disabled) {
+  background: #7a2830;
+}
+
+@media (max-width: 800px) {
+  .machine-panel-body {
+    grid-template-columns: 1fr;
+  }
+}

@@ -12,6 +12,7 @@ export function TopBar({
   onExportSvg,
   onExportDxf,
   onMachineExport,
+  onSendMachine,
   onUndo,
   onRedo,
   onHelp,
@@ -29,6 +30,7 @@ export function TopBar({
   onExportSvg: () => void
   onExportDxf: () => void
   onMachineExport: () => void
+  onSendMachine: () => void
   onUndo: () => void
   onRedo: () => void
   onHelp: () => void
@@ -67,10 +69,18 @@ export function TopBar({
         <button
           type="button"
           className="btn primary"
-          onClick={onMachineExport}
-          title="Export for IKIER K1, Silhouette, LightBurn…"
+          onClick={onSendMachine}
+          title="Connect to IKIER K1 and send G-code"
         >
-          Machine export
+          Send to K1
+        </button>
+        <button
+          type="button"
+          className="btn"
+          onClick={onMachineExport}
+          title="Export SVG/DXF for LightBurn / Studio (optional)"
+        >
+          Export file
         </button>
         <button type="button" className="btn" onClick={onExportSvg} title="Quick SVG">
           SVG
