@@ -9,7 +9,7 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
         onClick={(e) => e.stopPropagation()}
       >
         <header className="modal-header">
-          <h2>CutForge shortcuts · v0.8</h2>
+          <h2>CutForge shortcuts · v0.9</h2>
           <button type="button" className="btn" onClick={onClose}>
             Close
           </button>
@@ -35,16 +35,15 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
             </tbody>
           </table>
           <p className="hint">
-            <strong>Send to K1:</strong> GRBL USB G-code. Engrave fills use
-            configurable hatch spacing, angle, and optional cross-hatch. Cancel
-            / disconnect → <strong>M5</strong> laser off.
+            <strong>Colors:</strong> Inspector → Line (stroke) and Fill pickers +
+            hex. Any object can have either.
             <br />
-            <strong>Send to Silhouette:</strong> USB GPGL to Cameo / Portrait
-            (open Graphtec protocol). Cut=blade, Score=light pressure,
-            Engrave=pen. Desktop only; Linux udev <code>0b4d</code> / group{' '}
-            <code>lp</code>. Fallback: inkscape-silhouette.
+            <strong>Laser color map:</strong> assign power <em>S</em> (and optional
+            feed <em>F</em>) per color. Send to K1 uses stroke for cut/score and
+            fill for engrave when a swatch matches; Cut/Score/Engrave presets
+            still set the operation and defaults.
             <br />
-            File export (SVG/DXF) still available; LightBurn optional.
+            Map is saved in the <code>.cutforge</code> project.
           </p>
         </div>
       </div>

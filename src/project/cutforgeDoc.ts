@@ -1,5 +1,10 @@
 import type { PagePreset, DocStyle, SnapSettings, Unit } from '../types'
 import { CUTFORGE_VERSION, DEFAULT_SNAP } from '../types'
+import {
+  DEFAULT_LASER_COLOR_MAP,
+  parseColorMap,
+  type LaserColorMapEntry,
+} from '../machine/colorMap'
 
 /** Minimal item shape for serialization (Paper.js Item). */
 export interface SerializableItem {
@@ -15,6 +20,8 @@ export interface CutForgeDocument {
   style: DocStyle
   snap: SnapSettings
   regMarks?: boolean
+  /** Color → laser power/speed map for Send to K1 */
+  laserColorMap?: LaserColorMapEntry[]
   objects: string[]
   savedAt: string
 }
@@ -27,6 +34,7 @@ export function serializeDocument(opts: {
   snap: SnapSettings
   objects: SerializableItem[]
   regMarks?: boolean
+  laserColorMap?: LaserColorMapEntry[]
 }): string {
   const doc: CutForgeDocument = {
     format: 'cutforge',
@@ -37,6 +45,9 @@ export function serializeDocument(opts: {
     style: { ...opts.style },
     snap: { ...opts.snap },
     regMarks: !!opts.regMarks,
+    laserColorMap: opts.laserColorMap?.length
+      ? opts.laserColorMap
+      : DEFAULT_LASER_COLOR_MAP.map((e) => ({ ...e })),
     objects: opts.objects.map((o) => o.exportJSON({ asString: true }) as string),
     savedAt: new Date().toISOString(),
   }
@@ -64,5 +75,6 @@ export function parseDocument(text: string): CutForgeDocument {
     snap: { ...DEFAULT_SNAP, ...(data.snap || {}) },
     name: data.name || 'Untitled',
     regMarks: !!data.regMarks,
+    laserColorMap: parseColorMap(data.laserColorMap),
   }
 }

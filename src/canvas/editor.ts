@@ -8,6 +8,10 @@ import { buildRegistrationMarks } from './regMarks'
 import { convertPointTextToOutlines } from './textOutlines'
 import { parseDocument, serializeDocument } from '../project/cutforgeDoc'
 import type { CutForgeDocument } from '../project/cutforgeDoc'
+import {
+  DEFAULT_LASER_COLOR_MAP,
+  type LaserColorMapEntry,
+} from '../machine/colorMap'
 import type {
   AlignMode,
   BooleanOp,
@@ -65,6 +69,9 @@ export class CutForgeEditor {
     cutType: 'cut',
     hairline: true,
   }
+  private laserColorMap: LaserColorMapEntry[] = DEFAULT_LASER_COLOR_MAP.map(
+    (e) => ({ ...e }),
+  )
   private page: PagePreset
   private paperTool: paper.Tool
   private currentPath: paper.Path | null = null
@@ -587,6 +594,7 @@ export class CutForgeEditor {
       snap: this.snapSettings,
       objects: this.getDocItems(),
       regMarks: this.regMarksEnabled,
+      laserColorMap: this.laserColorMap,
     })
   }
 
@@ -599,6 +607,9 @@ export class CutForgeEditor {
     this.page = { ...parsed.page }
     this.unit = parsed.unit
     this.style = { ...parsed.style }
+    this.laserColorMap = (parsed.laserColorMap || DEFAULT_LASER_COLOR_MAP).map(
+      (e) => ({ ...e }),
+    )
     this.snapSettings = { ...DEFAULT_SNAP, ...parsed.snap }
     this.regMarksEnabled = !!parsed.regMarks
     this.fileName = parsed.name.endsWith('.cutforge')
@@ -702,6 +713,17 @@ export class CutForgeEditor {
       text: 'Text — click to place',
     }
     return tips[tool]
+  }
+
+  getLaserColorMap(): LaserColorMapEntry[] {
+    return this.laserColorMap.map((e) => ({ ...e }))
+  }
+
+  setLaserColorMap(map: LaserColorMapEntry[]) {
+    this.laserColorMap = map.map((e) => ({ ...e }))
+    this.dirty = true
+    this.status = `Laser color map: ${this.laserColorMap.length} swatch(es)`
+    this.notify()
   }
 
   setStyle(partial: Partial<DocStyle>) {

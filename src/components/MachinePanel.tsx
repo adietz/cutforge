@@ -21,6 +21,8 @@ import {
 import { saveTextFile } from '../io/files'
 import type { PagePreset } from '../types'
 import paper from 'paper'
+import { LaserColorMapEditor } from './LaserColorMapEditor'
+import type { LaserColorMapEntry } from '../machine/colorMap'
 
 void paper
 
@@ -30,12 +32,16 @@ export function MachinePanel({
   getItems,
   page,
   onStatus,
+  colorMap,
+  onColorMap,
 }: {
   open: boolean
   onClose: () => void
   getItems: () => paper.Item[]
   page: PagePreset
   onStatus: (s: string) => void
+  colorMap: LaserColorMapEntry[]
+  onColorMap: (map: LaserColorMapEntry[]) => void
 }) {
   const native = serialAvailable()
   const [ports, setPorts] = useState<PortInfo[]>([])
@@ -79,7 +85,7 @@ export function MachinePanel({
 
   const rebuildPreview = () => {
     try {
-      const g = generateGcode(getItems(), page, { presets })
+      const g = generateGcode(getItems(), page, { presets, colorMap })
       setPreview(g)
       setErr(null)
     } catch (e) {
@@ -90,7 +96,7 @@ export function MachinePanel({
   useEffect(() => {
     if (open) rebuildPreview()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, page, presets])
+  }, [open, page, presets, colorMap])
 
   const lineCount = useMemo(
     () => gcodeToLines(preview).length,
@@ -163,7 +169,7 @@ export function MachinePanel({
 
   const saveGcode = async () => {
     rebuildPreview()
-    const g = generateGcode(getItems(), page, { presets })
+    const g = generateGcode(getItems(), page, { presets, colorMap })
     const result = await saveTextFile('gcode', 'cutforge-ikier-k1.nc', g)
     if (result) onStatus(`Saved ${result.name}`)
   }
@@ -302,6 +308,9 @@ export function MachinePanel({
                 </button>
               ))}
             </div>
+
+            <h3 style={{ marginTop: 14 }}>Laser color map</h3>
+            <LaserColorMapEditor map={colorMap} onChange={onColorMap} compact />
 
             <h3 style={{ marginTop: 14 }}>Presets (calibrate on scrap!)</h3>
             {(

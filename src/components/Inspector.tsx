@@ -12,6 +12,8 @@ import type {
 import { HAIRLINE_MM, INCH_TO_MM } from '../types'
 import { LayersPanel } from './LayersPanel'
 import { BUNDLED_FONTS } from '../fonts/catalog'
+import { LaserColorMapEditor } from './LaserColorMapEditor'
+import { normalizeHex, type LaserColorMapEntry } from '../machine/colorMap'
 
 export function Inspector({
   unit,
@@ -45,6 +47,8 @@ export function Inspector({
   onOutlineFont,
   onConvertOutlines,
   onOpenTrace,
+  laserColorMap,
+  onLaserColorMap,
 }: {
   unit: Unit
   page: PagePreset
@@ -77,6 +81,8 @@ export function Inspector({
   onOutlineFont: (id: string) => void
   onConvertOutlines: () => void
   onOpenTrace: () => void
+  laserColorMap: LaserColorMapEntry[]
+  onLaserColorMap: (map: LaserColorMapEntry[]) => void
 }) {
   const toDisplay = (mm: number) =>
     unit === 'in' ? +(mm / INCH_TO_MM).toFixed(3) : +mm.toFixed(2)
@@ -220,12 +226,28 @@ export function Inspector({
       </div>
 
       <label className="field">
-        <span>Stroke</span>
-        <input
-          type="color"
-          value={style.strokeColor.startsWith('#') ? style.strokeColor : '#e74c3c'}
-          onChange={(e) => onStyle({ strokeColor: e.target.value })}
-        />
+        <span>Line (stroke) color</span>
+        <div className="row color-row">
+          <input
+            type="color"
+            value={
+              normalizeHex(style.strokeColor) || '#e74c3c'
+            }
+            onChange={(e) => onStyle({ strokeColor: e.target.value })}
+            title="Stroke color"
+          />
+          <input
+            type="text"
+            className="hex-input"
+            spellCheck={false}
+            value={style.strokeColor}
+            onChange={(e) => onStyle({ strokeColor: e.target.value })}
+            onBlur={(e) => {
+              const n = normalizeHex(e.target.value)
+              if (n) onStyle({ strokeColor: n })
+            }}
+          />
+        </div>
       </label>
 
       <label className="check-field">
@@ -258,16 +280,37 @@ export function Inspector({
       </label>
 
       <label className="field">
-        <span>Fill (engrave / none for cut)</span>
-        <div className="row">
+        <span>Fill color</span>
+        <div className="row color-row">
           <input
             type="color"
             value={
-              style.fillColor && style.fillColor.startsWith('#')
-                ? style.fillColor
+              style.fillColor && normalizeHex(style.fillColor)
+                ? normalizeHex(style.fillColor)
                 : '#3498db'
             }
             onChange={(e) => onStyle({ fillColor: e.target.value })}
+            title="Fill color"
+          />
+          <input
+            type="text"
+            className="hex-input"
+            spellCheck={false}
+            placeholder="none"
+            value={style.fillColor ?? ''}
+            onChange={(e) =>
+              onStyle({
+                fillColor: e.target.value.trim() === '' ? null : e.target.value,
+              })
+            }
+            onBlur={(e) => {
+              if (!e.target.value.trim()) {
+                onStyle({ fillColor: null })
+                return
+              }
+              const n = normalizeHex(e.target.value)
+              if (n) onStyle({ fillColor: n })
+            }}
           />
           <button
             type="button"
@@ -277,7 +320,18 @@ export function Inspector({
             None
           </button>
         </div>
+        <p className="hint tight">
+          Assign freely on any object. Engrave often uses fill; cut/score usually
+          stroke-only. Colors can drive laser power via the map below.
+        </p>
       </label>
+
+      <h2>Laser color map</h2>
+      <LaserColorMapEditor
+        map={laserColorMap}
+        onChange={onLaserColorMap}
+        compact
+      />
 
       <h2>Text & images</h2>
       <label className="field">

@@ -728,3 +728,60 @@ kbd {
     grid-template-columns: 1fr;
   }
 }
+
+.color-row {
+  align-items: center;
+  gap: 8px;
+}
+
+.hex-input {
+  flex: 1;
+  min-width: 72px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.color-map-editor .color-map-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.color-map-row {
+  display: grid;
+  grid-template-columns: 28px 72px 72px 52px 52px 1fr 28px;
+  gap: 4px;
+  align-items: center;
+}
+
+.color-map-editor.compact .color-map-row {
+  grid-template-columns: 26px 64px 64px 48px 48px minmax(40px, 1fr) 26px;
+}
+
+.color-map-row .mini {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  font-size: 10px;
+  color: #9aa3b5;
+}
+
+.color-map-row .mini input {
+  width: 100%;
+  font-size: 11px;
+}
+
+.color-map-row .label-input {
+  font-size: 11px;
+  min-width: 0;
+}
+
+.color-map-row input[type='color'] {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid #2a3140;
+  background: transparent;
+}

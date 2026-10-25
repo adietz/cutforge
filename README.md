@@ -3,11 +3,14 @@
 Vector design for **IKIER K1** (GRBL diode laser) and **Silhouette** cutters.  
 **Tauri 2 + React + TypeScript + Paper.js**.
 
-## Features (v0.8.0)
+## Features (v0.9.0)
 
 - Editor, snap, booleans, text→outlines, image tracing, machine file export
 - **Send to K1** — USB serial G-code with denser/angled/cross-hatch engrave fills
 - **Send to Silhouette** — USB GPGL to Cameo / Portrait (open Graphtec protocol)
+- **Line & fill colors** — first-class stroke/fill in the inspector (picker + hex)
+- **Laser color map** — map hex colors → power S / optional feed; overrides
+  presets on Send to K1 when stroke (vectors) or fill (engrave) matches
 - SVG/DXF export remains; LightBurn optional
 
 ## Engrave fills (K1)
@@ -21,6 +24,17 @@ In **Send to K1**, Engrave paths that are **closed** are filled with hatch lines
 | Cross-hatch | off | Second pass at angle+90° |
 
 Cut and Score stay pure vectors. Cancel / disconnect still commands **M5**.
+
+## Laser color map (v0.9)
+
+Inspector **Laser color map** (also in Send to K1):
+
+1. Color each object (stroke and/or fill).
+2. Add map rows: hex, match stroke/fill/either, power **S**, optional feed **F**.
+3. On G-code send, a matching color overrides the Cut/Score/Engrave preset power
+   (and speed if F is set). Operation type still comes from Cut/Score/Engrave.
+
+Persisted in `.cutforge` as `laserColorMap`.
 
 ## Send to Silhouette (USB)
 

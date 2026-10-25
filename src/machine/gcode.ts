@@ -2,11 +2,17 @@ import paper from 'paper'
 import type { CutType, PagePreset } from '../types'
 import { PX_PER_MM } from '../types'
 import type { MachineLaserPresets, OpPreset } from './presets'
+import {
+  lookupColorMap,
+  type LaserColorMapEntry,
+} from './colorMap'
 
 void paper
 
 export interface GcodeOptions {
   presets: MachineLaserPresets
+  /** Color → power/speed overrides (stroke for vectors, fill for engrave) */
+  colorMap?: LaserColorMapEntry[]
   comments?: boolean
   returnHome?: boolean
 }
@@ -37,6 +43,9 @@ export function generateGcode(
       `; Engrave hatch ${e.hatchMm ?? 0.2}mm @ ${e.hatchAngleDeg ?? 0}°` +
         (e.crossHatch ? ' cross' : ''),
     )
+    lines.push(
+      `; Color map entries: ${(options.colorMap || []).length} — match overrides S/F`,
+    )
     lines.push('; Laser: M4 dynamic / M5 off — calibrate on scrap!')
   }
 
@@ -47,14 +56,22 @@ export function generateGcode(
   lines.push(`G0 X0 Y0 F${Math.round(p.travel)}`)
 
   const flat = flatten(items)
+  const colorMap = options.colorMap ?? []
   for (const item of flat) {
     const cutType = ((item.data?.cutType as CutType) || 'cut') as CutType
+    const base =
+      cutType === 'engrave'
+        ? p.engrave
+        : cutType === 'score'
+          ? p.score
+          : p.cut
+    const preset = resolvePreset(item, cutType, base, colorMap)
     if (cutType === 'engrave') {
-      emitEngrave(item, toMachine, p.engrave, p.travel, lines)
+      emitEngrave(item, toMachine, preset, p.travel, lines)
     } else if (cutType === 'score') {
-      emitVector(item, toMachine, p.score, p.travel, lines, 'score')
+      emitVector(item, toMachine, preset, p.travel, lines, 'score')
     } else {
-      emitVector(item, toMachine, p.cut, p.travel, lines, 'cut')
+      emitVector(item, toMachine, preset, p.travel, lines, 'cut')
     }
   }
 
@@ -64,6 +81,27 @@ export function generateGcode(
   }
   lines.push('M2 ; program end')
   return lines.join('\n') + '\n'
+}
+
+
+function resolvePreset(
+  item: paper.Item,
+  cutType: CutType,
+  base: OpPreset,
+  colorMap: LaserColorMapEntry[],
+): OpPreset {
+  if (!colorMap.length) return base
+  const hit = lookupColorMap(colorMap, {
+    strokeColor: (item.data?.strokeColor as string) || null,
+    fillColor: (item.data?.fillColor as string) || null,
+    prefer: cutType === 'engrave' ? 'fill' : 'stroke',
+  })
+  if (!hit) return base
+  return {
+    ...base,
+    power: hit.power,
+    speed: hit.speed != null ? hit.speed : base.speed,
+  }
 }
 
 function flatten(items: paper.Item[]): paper.Item[] {

@@ -34,6 +34,10 @@ import type {
   Unit,
 } from './types'
 import { DEFAULT_SNAP, HAIRLINE_MM, INCH_TO_MM } from './types'
+import {
+  DEFAULT_LASER_COLOR_MAP,
+  type LaserColorMapEntry,
+} from './machine/colorMap'
 import './App.css'
 
 export default function App() {
@@ -72,6 +76,9 @@ export default function App() {
   const [machineExportOpen, setMachineExportOpen] = useState(false)
   const [machinePanelOpen, setMachinePanelOpen] = useState(false)
   const [silhouettePanelOpen, setSilhouettePanelOpen] = useState(false)
+  const [laserColorMap, setLaserColorMap] = useState<LaserColorMapEntry[]>(
+    () => DEFAULT_LASER_COLOR_MAP.map((e) => ({ ...e })),
+  )
   const [exportTextCount, setExportTextCount] = useState(0)
   const recoveryJson = useRef<string | null>(null)
 
@@ -201,6 +208,9 @@ export default function App() {
       setPage({ ...doc.page })
       setUnit(doc.unit)
       setStyle({ ...doc.style })
+      if (doc.laserColorMap) {
+        setLaserColorMap(doc.laserColorMap.map((e) => ({ ...e })))
+      }
       setSnap({ ...DEFAULT_SNAP, ...doc.snap })
       setRegMarks(!!doc.regMarks)
       clearRecovery()
@@ -233,6 +243,11 @@ export default function App() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onSave, onSaveAs, onOpen])
+
+  const applyLaserColorMap = (map: LaserColorMapEntry[]) => {
+    setLaserColorMap(map)
+    editorRef.current?.setLaserColorMap(map)
+  }
 
   const applyStyle = (partial: Partial<DocStyle>) => {
     setStyle((s) => {
@@ -289,6 +304,7 @@ export default function App() {
     projectPathRef.current = null
     setPage({ ...PAGE_PRESETS[2] })
     setRegMarks(false)
+    setLaserColorMap(DEFAULT_LASER_COLOR_MAP.map((e) => ({ ...e })))
     clearRecovery()
   }
 
@@ -419,6 +435,9 @@ export default function App() {
       setPage({ ...doc.page })
       setUnit(doc.unit)
       setStyle({ ...doc.style })
+      if (doc.laserColorMap) {
+        setLaserColorMap(doc.laserColorMap.map((e) => ({ ...e })))
+      }
       setRegMarks(!!doc.regMarks)
       setStatus('Restored autosave')
     } catch (err) {
@@ -443,7 +462,11 @@ export default function App() {
         onExportSvg={() => void onExportSvg()}
         onExportDxf={() => void onExportDxf()}
         onMachineExport={openMachineExport}
-        onSendMachine={() => setMachinePanelOpen(true)}
+        onSendMachine={() => {
+          const map = editorRef.current?.getLaserColorMap()
+          if (map) setLaserColorMap(map)
+          setMachinePanelOpen(true)
+        }}
         onSendSilhouette={() => setSilhouettePanelOpen(true)}
         onUndo={() => editorRef.current?.undo()}
         onRedo={() => editorRef.current?.redo()}
@@ -479,6 +502,8 @@ export default function App() {
             void editorRef.current?.convertSelectedTextToOutlines(outlineFontId)
           }
           onOpenTrace={() => setTraceOpen(true)}
+          laserColorMap={laserColorMap}
+          onLaserColorMap={applyLaserColorMap}
           onUnit={onUnitChange}
           onPage={onPageId}
           onCustomSize={onCustomSize}
@@ -526,6 +551,8 @@ export default function App() {
         }
         page={page}
         onStatus={setStatus}
+        colorMap={laserColorMap}
+        onColorMap={applyLaserColorMap}
       />
       <MachineExportModal
         open={machineExportOpen}
