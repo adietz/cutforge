@@ -16,7 +16,7 @@ Cross-platform desktop vector design app for **laser cutting / engraving** and *
 ## Requirements
 
 - Node.js 20+ (22 recommended)
-- Rust toolchain (for native Tauri builds) — https://rustup.rs
+- Rust toolchain **1.90+** via rustup (Tauri 2.12) — https://rustup.rs
 - OS deps for Tauri:
   - **Linux**: `webkit2gtk-4.1`, GTK 3, `librsvg2`, `patchelf` (see [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/))
   - **macOS**: Xcode CLT
