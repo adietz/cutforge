@@ -1,6 +1,6 @@
 [[permission]]
 identifier = "allow-serial"
-description = "USB serial (IKIER K1 GRBL) and Silhouette Graphtec USB"
+description = "USB serial, Silhouette USB, Wi‑Fi TCP, and vector import helpers"
 commands.allow = [
   "list_serial_ports",
   "serial_connect",
@@ -14,4 +14,6 @@ commands.allow = [
   "list_silhouette_devices",
   "silhouette_send_gpgl",
   "grbl_tcp_send",
+  "vector_helper_status",
+  "convert_vector_to_svg",
 ]

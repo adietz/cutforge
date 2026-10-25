@@ -1,6 +1,7 @@
 mod serial_grbl;
 mod silhouette_usb;
 mod grbl_tcp;
+mod vector_convert;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -20,6 +21,8 @@ pub fn run() {
       silhouette_usb::list_silhouette_devices,
       silhouette_usb::silhouette_send_gpgl,
       grbl_tcp::grbl_tcp_send,
+      vector_convert::vector_helper_status,
+      vector_convert::convert_vector_to_svg,
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {

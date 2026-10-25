@@ -806,3 +806,25 @@ kbd {
 .print-cut-steps li {
   margin: 0.25rem 0;
 }
+
+.import-format-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-top: 8px;
+}
+.import-format-table th,
+.import-format-table td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid #2a3140;
+  vertical-align: top;
+}
+.import-format-table th {
+  color: #9aa3b5;
+  font-weight: 600;
+}
+.helper-list {
+  margin: 4px 0 0 1.1rem;
+  padding: 0;
+}

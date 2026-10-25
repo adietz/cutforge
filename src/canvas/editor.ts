@@ -26,6 +26,7 @@ import type {
   Unit,
 } from '../types'
 import { DEFAULT_SNAP, HAIRLINE_MM, PX_PER_MM } from '../types'
+import { cutTypeFromColor } from '../import/colorCutTypes'
 
 export type EditorListener = (info: EditorSnapshot) => void
 
@@ -37,6 +38,17 @@ function isGuide(item: paper.Item | null | undefined): boolean {
 let idSeq = 1
 function nextId() {
   return `cf-${Date.now().toString(36)}-${idSeq++}`
+}
+
+function colorToCss(c: paper.Color | string | null | undefined): string | null {
+  if (c == null) return null
+  if (typeof c === 'string') return c === 'none' ? null : c
+  try {
+    if ((c as paper.Color).alpha === 0) return null
+    return (c as paper.Color).toCSS(true)
+  } catch {
+    return null
+  }
 }
 
 function ensureMeta(item: paper.Item, fallbackName?: string) {
@@ -887,7 +899,7 @@ export class CutForgeEditor {
       this.history.pushBefore(before)
       this.dirty = true
       this.selectItems([item])
-      this.status = 'SVG imported — check Layers'
+      this.status = 'Vector imported — cut types from colors; check Layers'
       this.notify()
     } catch (err) {
       this.status = `Import error: ${String(err)}`
@@ -1064,7 +1076,35 @@ export class CutForgeEditor {
   }
 
   private tagImported(item: paper.Item) {
-    applyCutTypeVisual(item, 'cut', this.style)
+    const strokeStr = colorToCss(item.strokeColor)
+    const fillStr = colorToCss(item.fillColor)
+    const fromData = item.data?.cutType as CutType | undefined
+    const cutType: CutType =
+      fromData || cutTypeFromColor(strokeStr, fillStr)
+    const style: Partial<DocStyle> = {
+      cutType,
+      strokeColor: strokeStr || this.style.strokeColor,
+      fillColor:
+        fillStr && fillStr !== 'none'
+          ? fillStr
+          : cutType === 'engrave' || cutType === 'print'
+            ? (this.style.fillColor ?? null)
+            : null,
+    }
+    item.data.cutType = cutType
+    if (strokeStr) item.data.strokeColor = strokeStr
+    if (fillStr && fillStr !== 'none') item.data.fillColor = fillStr
+    applyCutTypeVisual(item, cutType, style)
+    if (strokeStr) {
+      try {
+        const path = item as paper.Path
+        if (path.strokeColor !== undefined) {
+          path.strokeColor = strokeStr as unknown as paper.Color
+        }
+      } catch {
+        /* keep defaults */
+      }
+    }
     this.applyStrokeWidth(item)
     ensureMeta(item)
     if (item.children) {

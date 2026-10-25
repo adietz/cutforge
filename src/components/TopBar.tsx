@@ -8,7 +8,7 @@ export function TopBar({
   onOpen,
   onSave,
   onSaveAs,
-  onImportSvg,
+  onImport,
   onExportSvg,
   onExportDxf,
   onMachineExport,
@@ -27,7 +27,7 @@ export function TopBar({
   onOpen: () => void
   onSave: () => void
   onSaveAs: () => void
-  onImportSvg: () => void
+  onImport: () => void
   onExportSvg: () => void
   onExportDxf: () => void
   onMachineExport: () => void
@@ -65,8 +65,13 @@ export function TopBar({
         <button type="button" className="btn" disabled={!canRedo} onClick={onRedo}>
           Redo
         </button>
-        <button type="button" className="btn" onClick={onImportSvg}>
-          Import SVG
+        <button
+          type="button"
+          className="btn"
+          onClick={onImport}
+          title="SVG, DXF, AI, PDF, CDR, EPS, EMF…"
+        >
+          Import
         </button>
         <button
           type="button"

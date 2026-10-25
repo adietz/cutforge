@@ -9,7 +9,7 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
         onClick={(e) => e.stopPropagation()}
       >
         <header className="modal-header">
-          <h2>CutForge · v1.1</h2>
+          <h2>CutForge · v1.2</h2>
           <button type="button" className="btn" onClick={onClose}>
             Close
           </button>
@@ -34,12 +34,12 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
             </tbody>
           </table>
           <p className="hint">
-            <strong>Print &amp; Cut:</strong> inspector steps → Print PNG/PDF,
-            then Cut SVG or Send to Silhouette with optical seek (TB123). Studio
-            remains the fallback if the sensor fails.
+            <strong>Import:</strong> top bar → Import (SVG, DXF, AI/PDF, CDR,
+            EPS, EMF). Pure JS for SVG/DXF; desktop helpers (LibreOffice /
+            pdftocairo / gs / Inkscape) for the rest — see docs/IMPORT.md.
             <br />
-            <strong>K1:</strong> USB G-code · bitmap raster engrave · experimental
-            Wi‑Fi TCP (hub AP :8080) · materials · kerf · job estimate.
+            <strong>Also:</strong> Print &amp; Cut · K1 bitmap / Wi‑Fi · optical
+            Silhouette seek · kerf · materials.
           </p>
         </div>
       </div>

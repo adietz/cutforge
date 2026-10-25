@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CanvasView } from './components/CanvasView'
 import { HelpModal } from './components/HelpModal'
+import { ImportModal } from './components/ImportModal'
+import type { ImportResult } from './import/pipeline'
 import { TraceModal } from './components/TraceModal'
 import {
   MachineExportModal,
@@ -68,6 +70,7 @@ export default function App() {
   const [layers, setLayers] = useState<LayerInfo[]>([])
   const [cursorLabel, setCursorLabel] = useState('—')
   const [helpOpen, setHelpOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [hairlineExport, setHairlineExport] = useState(true)
   const [fileLabel, setFileLabel] = useState('Untitled.cutforge')
   const [recoveryOpen, setRecoveryOpen] = useState(false)
@@ -317,11 +320,9 @@ export default function App() {
     clearRecovery()
   }
 
-  const onImportSvg = async () => {
-    const file = await openTextFile('svg')
-    if (!file) return
-    editorRef.current?.importSvg(file.text)
-    setStatus(`Imported ${file.name}`)
+  const onImportResult = (result: ImportResult) => {
+    editorRef.current?.importSvg(result.svg)
+    setStatus(`Imported ${result.sourceName} — ${result.message}`)
   }
 
   const onExportSvg = async () => {
@@ -527,7 +528,7 @@ export default function App() {
         onOpen={() => void onOpen()}
         onSave={() => void onSave()}
         onSaveAs={() => void onSaveAs()}
-        onImportSvg={() => void onImportSvg()}
+        onImport={() => setImportOpen(true)}
         onExportSvg={() => void onExportSvg()}
         onExportDxf={() => void onExportDxf()}
         onMachineExport={openMachineExport}
@@ -599,6 +600,12 @@ export default function App() {
           onOffset={(mm) => editorRef.current?.offsetSelected(mm)}
         />
       </div>
+      <ImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={onImportResult}
+        onStatus={setStatus}
+      />
       <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
       <SilhouettePanel
         open={silhouettePanelOpen}
