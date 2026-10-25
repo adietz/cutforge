@@ -11,6 +11,7 @@ export function TopBar({
   onImportSvg,
   onExportSvg,
   onExportDxf,
+  onMachineExport,
   onUndo,
   onRedo,
   onHelp,
@@ -27,6 +28,7 @@ export function TopBar({
   onImportSvg: () => void
   onExportSvg: () => void
   onExportDxf: () => void
+  onMachineExport: () => void
   onUndo: () => void
   onRedo: () => void
   onHelp: () => void
@@ -62,11 +64,19 @@ export function TopBar({
         <button type="button" className="btn" onClick={onImportSvg}>
           Import SVG
         </button>
-        <button type="button" className="btn primary" onClick={onExportSvg}>
-          Export SVG
+        <button
+          type="button"
+          className="btn primary"
+          onClick={onMachineExport}
+          title="Export for IKIER K1, Silhouette, LightBurn…"
+        >
+          Machine export
         </button>
-        <button type="button" className="btn primary" onClick={onExportDxf}>
-          Export DXF
+        <button type="button" className="btn" onClick={onExportSvg} title="Quick SVG">
+          SVG
+        </button>
+        <button type="button" className="btn" onClick={onExportDxf} title="Quick DXF">
+          DXF
         </button>
         <button type="button" className="btn" onClick={onHelp} title="Shortcuts (?)">
           Help

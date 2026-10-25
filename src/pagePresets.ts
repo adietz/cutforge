@@ -26,6 +26,18 @@ export const PAGE_PRESETS: PagePreset[] = [
     heightMm: 15 * INCH_TO_MM,
   },
   {
+    id: 'portrait',
+    name: 'Silhouette Portrait (8×12 in)',
+    widthMm: 8 * INCH_TO_MM,
+    heightMm: 12 * INCH_TO_MM,
+  },
+  {
+    id: 'ikier-k1',
+    name: 'IKIER K1 (410×410 mm)',
+    widthMm: 410,
+    heightMm: 410,
+  },
+  {
     id: 'custom',
     name: 'Custom',
     widthMm: 200,

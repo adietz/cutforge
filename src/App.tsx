@@ -2,6 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { CanvasView } from './components/CanvasView'
 import { HelpModal } from './components/HelpModal'
 import { TraceModal } from './components/TraceModal'
+import {
+  MachineExportModal,
+  type MachineExportOptions,
+} from './components/MachineExportModal'
+import { profileById } from './export/profiles'
 import { Inspector } from './components/Inspector'
 import { RecoveryModal } from './components/RecoveryModal'
 import { Toolbar } from './components/Toolbar'
@@ -62,6 +67,8 @@ export default function App() {
   const [hasText, setHasText] = useState(false)
   const [outlineFontId, setOutlineFontId] = useState('inter')
   const [traceOpen, setTraceOpen] = useState(false)
+  const [machineExportOpen, setMachineExportOpen] = useState(false)
+  const [exportTextCount, setExportTextCount] = useState(0)
   const recoveryJson = useRef<string | null>(null)
 
   const onUpdate = useCallback(
@@ -322,6 +329,82 @@ export default function App() {
     if (result) setStatus(`Exported ${result.name}`)
   }
 
+
+  const openMachineExport = () => {
+    const ed = editorRef.current
+    setExportTextCount(ed?.countTextObjects() ?? 0)
+    setMachineExportOpen(true)
+  }
+
+  const onMachineExport = async (opts: MachineExportOptions) => {
+    const ed = editorRef.current
+    if (!ed) return
+    const profile = profileById(opts.profileId)
+
+    if (opts.applySuggestedPage && profile.suggestedPageId) {
+      onPageId(profile.suggestedPageId)
+      // allow React state to settle — editor reads page from CanvasView prop on next tick;
+      // use the suggested preset directly for export geometry
+    }
+
+    if (opts.flattenText) {
+      const n = await ed.convertAllTextToOutlines(outlineFontId)
+      if (n > 0) setStatus(`Outlined ${n} text object(s) for export`)
+    }
+
+    const remaining = ed.countTextObjects({
+      excludeLocked: opts.excludeHiddenLocked,
+      excludeHidden: opts.excludeHiddenLocked,
+    })
+    if (remaining > 0 && opts.flattenText) {
+      setStatus(
+        `Warning: ${remaining} text object(s) could not be outlined — still in export`,
+      )
+    }
+
+    const pageForExport =
+      opts.applySuggestedPage && profile.suggestedPageId
+        ? { ...presetById(profile.suggestedPageId) }
+        : ed.getPage()
+
+    // Sync unit on editor for consistency
+    if (opts.unit !== unit) {
+      setUnit(opts.unit)
+      ed.setUnit(opts.unit)
+    }
+
+    const items = ed.getExportItems({
+      includeRegMarks: opts.includeRegMarks,
+      excludeLocked: opts.excludeHiddenLocked,
+      excludeHidden: opts.excludeHiddenLocked,
+    })
+    if (!items.length) {
+      setStatus('Nothing to export — draw something first')
+      return
+    }
+
+    const stem = profile.defaultFilename.replace(/\.(svg|dxf)$/i, '')
+    const filename = `${stem}.${opts.format}`
+
+    if (opts.format === 'dxf') {
+      const dxf = exportDxf(items, pageForExport, {
+        chordalMm: 0.1,
+        excludeLocked: opts.excludeHiddenLocked,
+      })
+      const result = await saveTextFile('dxf', filename, dxf)
+      if (result) setStatus(`Machine export: ${result.name} (${profile.name})`)
+    } else {
+      const svg = exportSvg(items, pageForExport, opts.unit, {
+        hairline: opts.hairline,
+        excludeLocked: opts.excludeHiddenLocked,
+        styleMode: profile.svgMode,
+        comment: `${profile.name} — ${profile.coordNote}`,
+      })
+      const result = await saveTextFile('svg', filename, svg)
+      if (result) setStatus(`Machine export: ${result.name} (${profile.name})`)
+    }
+  }
+
   const onRestore = () => {
     const json = recoveryJson.current
     setRecoveryOpen(false)
@@ -355,6 +438,7 @@ export default function App() {
         onImportSvg={() => void onImportSvg()}
         onExportSvg={() => void onExportSvg()}
         onExportDxf={() => void onExportDxf()}
+        onMachineExport={openMachineExport}
         onUndo={() => editorRef.current?.undo()}
         onRedo={() => editorRef.current?.redo()}
         onHelp={() => setHelpOpen(true)}
@@ -411,6 +495,13 @@ export default function App() {
         />
       </div>
       <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <MachineExportModal
+        open={machineExportOpen}
+        onClose={() => setMachineExportOpen(false)}
+        onExport={onMachineExport}
+        textCount={exportTextCount}
+        currentPageId={page.id}
+      />
       <TraceModal
         open={traceOpen}
         onClose={() => setTraceOpen(false)}

@@ -10,7 +10,7 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
         onClick={(e) => e.stopPropagation()}
       >
         <header className="modal-header">
-          <h2>CutForge shortcuts · v0.5</h2>
+          <h2>CutForge shortcuts · v0.6</h2>
           <button type="button" className="btn" onClick={onClose}>
             Close
           </button>
@@ -41,18 +41,19 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
             </tbody>
           </table>
           <p className="hint">
-            <strong>Text → outlines:</strong> select text, pick a bundled OFL
-            font (Inter / Open Sans) in the inspector, then{' '}
-            <em>Convert text to outlines</em>. Result is editable Paper paths
-            with Cut/Score/Engrave styles preserved; undoable. Offline fonts
-            under <code>public/fonts/</code>.
+            <strong>Machine export:</strong> top bar → <em>Machine export</em>.
+            Primary laser profile is <strong>IKIER K1</strong> (410×410 mm) —
+            LightBurn-colored SVG (Cut=red, Score=blue, Engrave=black) or mm DXF.
+            Also Silhouette Cameo/Portrait hairline SVG, generic laser, Glowforge.
+            Open files in LightBurn / LaserGRBL / Studio —{' '}
+            <strong>CutForge does not send G-code or USB</strong> yet.
             <br />
-            <strong>Image trace:</strong> inspector → <em>Trace image…</em>,
-            choose PNG/JPG, tune threshold / path omit / simplify / mono vs
-            color, preview, then Place on canvas as cut paths.
+            <strong>Coords:</strong> SVG origin top-left (Y-down); DXF origin
+            bottom-left (Y-up). LightBurn job origin is typically lower-left on
+            the machine.
             <br />
-            Native file dialogs in the Tauri app; browser pickers when using{' '}
-            <code>npm run dev</code>.
+            <strong>Text → outlines / Trace image:</strong> inspector — OFL fonts
+            offline; imagetracer for logos/line art.
           </p>
         </div>
       </div>

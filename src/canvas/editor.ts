@@ -199,12 +199,55 @@ export class CutForgeEditor {
   }
 
   /** Document objects plus registration marks when enabled (for export). */
-  getExportItems(): paper.Item[] {
-    const items = [...this.docLayer.children]
-    if (this.regMarksEnabled && this.regMarksGroup) {
+  getExportItems(opts?: {
+    includeRegMarks?: boolean
+    excludeLocked?: boolean
+    excludeHidden?: boolean
+  }): paper.Item[] {
+    const includeReg =
+      opts?.includeRegMarks !== undefined
+        ? opts.includeRegMarks
+        : this.regMarksEnabled
+    const excludeLocked = opts?.excludeLocked !== false
+    const excludeHidden = opts?.excludeHidden !== false
+    const items: paper.Item[] = []
+    for (const item of this.docLayer.children) {
+      if (excludeHidden && !item.visible) continue
+      if (excludeLocked && item.data?.locked) continue
+      items.push(item)
+    }
+    if (includeReg && this.regMarksGroup) {
       items.push(this.regMarksGroup)
     }
     return items
+  }
+
+  countTextObjects(opts?: { excludeLocked?: boolean; excludeHidden?: boolean }): number {
+    const excludeLocked = opts?.excludeLocked !== false
+    const excludeHidden = opts?.excludeHidden !== false
+    let n = 0
+    const walk = (item: paper.Item) => {
+      if (excludeHidden && !item.visible) return
+      if (excludeLocked && item.data?.locked) return
+      if (item.className === 'PointText') n++
+      if (item.children) for (const c of item.children) walk(c)
+    }
+    for (const item of this.docLayer.children) walk(item)
+    return n
+  }
+
+  async convertAllTextToOutlines(fontId = 'inter'): Promise<number> {
+    const texts: paper.PointText[] = []
+    const walk = (item: paper.Item) => {
+      if (!item.visible || item.data?.locked) return
+      if (item.className === 'PointText') texts.push(item as paper.PointText)
+      if (item.children) for (const c of item.children) walk(c)
+    }
+    for (const item of this.docLayer.children) walk(item)
+    if (!texts.length) return 0
+    this.selectItems(texts)
+    await this.convertSelectedTextToOutlines(fontId)
+    return texts.length
   }
 
   hasRegistrationMarks() {

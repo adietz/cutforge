@@ -7,11 +7,15 @@ void paper
 export interface DxfExportOptions {
   /** Max chord error in mm for curve flattening (default 0.1) */
   chordalMm?: number
+  /** Skip locked items (default true) */
+  excludeLocked?: boolean
 }
 
 /**
- * ASCII DXF for laser cutters. Curves (ellipses, arcs, beziers) are
- * approximated as dense LWPOLYLINE segments. Layers: CUT / SCORE / ENGRAVE.
+ * ASCII DXF for laser cutters (mm).
+ * Coordinate system: origin at bottom-left of the page, Y increases upward (Y-up).
+ * Curves (ellipses, arcs, beziers) are approximated as dense LWPOLYLINE segments.
+ * Layers: CUT / SCORE / ENGRAVE.
  */
 export function exportDxf(
   items: paper.Item[],
@@ -60,8 +64,11 @@ export function exportDxf(
   push(0, 'SECTION')
   push(2, 'ENTITIES')
 
+  const skipLocked = options.excludeLocked !== false
+
   const walk = (item: paper.Item) => {
     if (!item.visible) return
+    if (skipLocked && item.data?.locked) return
     if (item.data?.isGuide || item.data?.isHandle || item.data?.isPage) return
     const cutType = ((item.data?.cutType as string) || 'cut').toUpperCase()
     const layer =

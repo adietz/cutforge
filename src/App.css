@@ -605,3 +605,56 @@ kbd {
     grid-template-columns: 1fr;
   }
 }
+
+.machine-export-body {
+  display: grid;
+  grid-template-columns: minmax(280px, 1.2fr) minmax(200px, 0.8fr);
+  gap: 18px;
+}
+
+.machine-export-aside h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.machine-swatches {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+
+.machine-swatches li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid #3d4454;
+  display: inline-block;
+}
+
+.warn-text {
+  color: #e6b450;
+}
+
+.inspector .check,
+.machine-export-controls .check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  margin: 8px 0;
+  color: #c5cad6;
+}
+
+@media (max-width: 720px) {
+  .machine-export-body {
+    grid-template-columns: 1fr;
+  }
+}
