@@ -14,6 +14,7 @@ export interface CutForgeDocument {
   page: PagePreset
   style: DocStyle
   snap: SnapSettings
+  regMarks?: boolean
   objects: string[]
   savedAt: string
 }
@@ -25,6 +26,7 @@ export function serializeDocument(opts: {
   style: DocStyle
   snap: SnapSettings
   objects: SerializableItem[]
+  regMarks?: boolean
 }): string {
   const doc: CutForgeDocument = {
     format: 'cutforge',
@@ -34,6 +36,7 @@ export function serializeDocument(opts: {
     page: { ...opts.page },
     style: { ...opts.style },
     snap: { ...opts.snap },
+    regMarks: !!opts.regMarks,
     objects: opts.objects.map((o) => o.exportJSON({ asString: true }) as string),
     savedAt: new Date().toISOString(),
   }
@@ -60,5 +63,6 @@ export function parseDocument(text: string): CutForgeDocument {
     },
     snap: { ...DEFAULT_SNAP, ...(data.snap || {}) },
     name: data.name || 'Untitled',
+    regMarks: !!data.regMarks,
   }
 }

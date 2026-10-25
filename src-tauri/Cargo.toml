@@ -1,6 +1,6 @@
 [package]
 name = "cutforge"
-version = "0.1.0"
+version = "0.4.0"
 description = "CutForge — vector design for laser cutting and Silhouette"
 authors = ["Andy Dietz"]
 edition = "2021"
@@ -19,3 +19,5 @@ serde = { version = "1", features = ["derive"] }
 log = "0.4"
 tauri = { version = "2", features = [] }
 tauri-plugin-log = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"

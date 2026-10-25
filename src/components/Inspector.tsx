@@ -36,6 +36,8 @@ export function Inspector({
   onReorderLayer,
   onBoolean,
   onOffset,
+  regMarks,
+  onRegMarks,
 }: {
   unit: Unit
   page: PagePreset
@@ -60,6 +62,8 @@ export function Inspector({
   onReorderLayer: (id: string, dir: 'up' | 'down' | 'top' | 'bottom') => void
   onBoolean: (op: BooleanOp) => void
   onOffset: (offsetMm: number) => void
+  regMarks: boolean
+  onRegMarks: (enabled: boolean) => void
 }) {
   const toDisplay = (mm: number) =>
     unit === 'in' ? +(mm / INCH_TO_MM).toFixed(3) : +mm.toFixed(2)
@@ -121,6 +125,18 @@ export function Inspector({
           in
         </button>
       </div>
+
+      <label className="check-field">
+        <input
+          type="checkbox"
+          checked={regMarks}
+          onChange={(e) => onRegMarks(e.target.checked)}
+        />
+        <span>Silhouette registration marks</span>
+      </label>
+      <p className="hint tight">
+        Four corner marks for Cameo print-and-cut; included in SVG export.
+      </p>
 
       <h2>Snap</h2>
       <label className="check-field">

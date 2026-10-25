@@ -19,17 +19,16 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
           <table className="shortcut-table">
             <tbody>
               {[
-                ['V / R / E / L / P / F / T', 'Tools'],
-                ['Drag empty', 'Marquee multi-select'],
-                ['Shift+click', 'Add/remove from selection'],
-                ['Ctrl/Cmd+A', 'Select all'],
-                ['Ctrl/Cmd+C / V / D', 'Copy / Paste / Duplicate'],
+                ['V R E L P F T', 'Tools'],
+                ['Shift (line / polygon / rotate)', 'Snap to 15° increments'],
+                ['Shift (rect / ellipse)', 'Square / circle'],
+                ['Drag empty / Shift+click', 'Marquee / toggle select'],
+                ['Ctrl/Cmd+A C V D', 'Select all / Copy / Paste / Duplicate'],
                 ['Ctrl/Cmd+Z / Shift+Z / Y', 'Undo / Redo'],
-                ['Ctrl/Cmd+S / Shift+S', 'Save / Save As'],
-                ['Ctrl/Cmd+O', 'Open project'],
+                ['Ctrl/Cmd+S / Shift+S / O', 'Save / Save As / Open'],
                 ['Space+drag / Wheel', 'Pan / Zoom'],
-                ['Delete', 'Delete selection'],
-                ['Esc', 'Cancel / select tool'],
+                ['Delete / Backspace', 'Delete selection'],
+                ['Esc', 'Cancel drawing, else clear selection'],
                 ['?', 'This cheatsheet'],
               ].map(([k, v]) => (
                 <tr key={k}>
@@ -42,10 +41,12 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
             </tbody>
           </table>
           <p className="hint">
-            Projects use <strong>.cutforge</strong> JSON. Autosave recovery runs
-            every 30s while dirty. Snap + smart guides live in the inspector.
-            Text is not converted to glyph outlines (no bundled fonts)—export
-            keeps &lt;text&gt; / DXF TEXT.
+            <strong>Angle constraint:</strong> hold Shift to snap lines, polygon
+            segments, and rotation to <strong>15°</strong> steps. Rect/ellipse
+            become square/circle with Shift.
+            <br />
+            Native file dialogs in the Tauri app; browser pickers when using{' '}
+            <code>npm run dev</code>.
           </p>
         </div>
       </div>

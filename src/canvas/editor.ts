@@ -3,6 +3,8 @@ import { applyCutTypeVisual, styleFromItem } from './styles'
 import { HistoryStack } from './history'
 import { snapDelta, snapPoint } from './snap'
 import { booleanOperate, offsetPath } from './booleans'
+import { constrainPointToAngle, snapAngleDeg } from './angles'
+import { buildRegistrationMarks } from './regMarks'
 import { parseDocument, serializeDocument } from '../project/cutforgeDoc'
 import type { CutForgeDocument } from '../project/cutforgeDoc'
 import type {
@@ -104,6 +106,9 @@ export class CutForgeEditor {
   private fileName: string | null = null
   private dirty = false
   private moveBoundsStart: paper.Rectangle | null = null
+  private regMarksEnabled = false
+  private regMarksGroup: paper.Group | null = null
+  private rotateBaseDeg = 0
 
   constructor(canvas: HTMLCanvasElement, page: PagePreset) {
     this.canvas = canvas
@@ -162,6 +167,42 @@ export class CutForgeEditor {
 
   getDocItems(): paper.Item[] {
     return [...this.docLayer.children]
+  }
+
+  /** Document objects plus registration marks when enabled (for export). */
+  getExportItems(): paper.Item[] {
+    const items = [...this.docLayer.children]
+    if (this.regMarksEnabled && this.regMarksGroup) {
+      items.push(this.regMarksGroup)
+    }
+    return items
+  }
+
+  hasRegistrationMarks() {
+    return this.regMarksEnabled
+  }
+
+  setRegistrationMarks(enabled: boolean) {
+    this.regMarksEnabled = enabled
+    this.rebuildRegMarks()
+    this.dirty = true
+    this.status = enabled
+      ? 'Registration marks on (Cameo print-and-cut)'
+      : 'Registration marks off'
+    this.notify()
+  }
+
+  private rebuildRegMarks() {
+    this.regMarksGroup?.remove()
+    this.regMarksGroup = null
+    if (!this.regMarksEnabled) return
+    this.guideLayer.activate()
+    this.regMarksGroup = buildRegistrationMarks(
+      this.page.widthMm,
+      this.page.heightMm,
+    )
+    this.guideLayer.addChild(this.regMarksGroup)
+    this.docLayer.activate()
   }
 
   getView() {
@@ -359,6 +400,7 @@ export class CutForgeEditor {
       style: this.style,
       snap: this.snapSettings,
       objects: this.getDocItems(),
+      regMarks: this.regMarksEnabled,
     })
   }
 
@@ -372,10 +414,12 @@ export class CutForgeEditor {
     this.unit = parsed.unit
     this.style = { ...parsed.style }
     this.snapSettings = { ...DEFAULT_SNAP, ...parsed.snap }
+    this.regMarksEnabled = !!parsed.regMarks
     this.fileName = parsed.name.endsWith('.cutforge')
       ? parsed.name
       : `${parsed.name}.cutforge`
     this.rebuildPage()
+    this.rebuildRegMarks()
     this.docLayer.removeChildren()
     this.docLayer.activate()
     for (const s of parsed.objects) {
@@ -447,13 +491,23 @@ export class CutForgeEditor {
     this.clearMarquee()
     if (tool !== 'polygon') this.polygonPoints = []
     if (tool !== 'select') this.deselectAll()
-    this.status =
-      tool === 'select'
-        ? 'Select — drag empty = marquee · Shift+click toggle · Del · ⌘D · ⌘Z'
-        : tool === 'polygon'
-          ? 'Polygon — click points, Enter or double-click to close'
-          : `Drawing: ${tool}`
+    this.status = this.toolTip(tool)
     this.notify()
+  }
+
+  private toolTip(tool: Tool): string {
+    const tips: Record<Tool, string> = {
+      select:
+        'Select — marquee · Shift+click · Del · Esc clears · Shift+rotate = 15°',
+      rect: 'Rectangle — drag to draw · grid/edge snap on',
+      ellipse: 'Ellipse — drag to draw',
+      line: 'Line — drag · hold Shift for 15° angles',
+      polygon:
+        'Polygon — click points · Shift = 15° · Enter/dblclick close · Esc cancel',
+      freehand: 'Freehand — drag path · Esc cancel',
+      text: 'Text — click to place',
+    }
+    return tips[tool]
   }
 
   setStyle(partial: Partial<DocStyle>) {
@@ -481,6 +535,7 @@ export class CutForgeEditor {
   setPage(page: PagePreset) {
     this.page = page
     this.rebuildPage()
+    this.rebuildRegMarks()
     this.fitPage()
     this.notify()
   }
@@ -792,6 +847,8 @@ export class CutForgeEditor {
       snap: { ...this.snapSettings },
       fileName: this.fileName,
       dirty: this.dirty,
+      regMarks: this.regMarksEnabled,
+      tool: this.tool,
     }
   }
 
@@ -1057,6 +1114,7 @@ export class CutForgeEditor {
           e.point.y - this.transformOrigin.y,
           e.point.x - this.transformOrigin.x,
         )
+        this.rotateBaseDeg = (this.startRotation * 180) / Math.PI
       } else {
         this.mode = 'resize'
         this.resizeCorner = h
@@ -1148,14 +1206,20 @@ export class CutForgeEditor {
       }
       this.drawHandles()
     } else if (this.mode === 'rotate' && this.transformOrigin) {
-      const ang = Math.atan2(
+      let ang = Math.atan2(
         e.point.y - this.transformOrigin.y,
         e.point.x - this.transformOrigin.x,
       )
-      const deg = ((ang - this.startRotation) * 180) / Math.PI
+      let absDeg = (ang * 180) / Math.PI
+      if (e.modifiers.shift) {
+        absDeg = snapAngleDeg(absDeg)
+        ang = (absDeg * Math.PI) / 180
+      }
+      const deg = absDeg - this.rotateBaseDeg
       for (const item of this.selected) {
         if (!item.data.locked) item.rotate(deg, this.transformOrigin!)
       }
+      this.rotateBaseDeg = absDeg
       this.startRotation = ang
       this.drawHandles()
     } else if (this.mode === 'resize' && this.startBounds && this.resizeCorner) {
@@ -1248,7 +1312,13 @@ export class CutForgeEditor {
       this.styleNew(this.currentPath)
       this.docLayer.addChild(this.currentPath)
     } else if (this.tool === 'polygon') {
-      this.polygonPoints.push(pt.clone())
+      let polyPt = pt
+      if (e.modifiers.shift && this.polygonPoints.length) {
+        const last = this.polygonPoints[this.polygonPoints.length - 1]
+        const c = constrainPointToAngle(last, polyPt)
+        polyPt = new paper.Point(c.x, c.y)
+      }
+      this.polygonPoints.push(polyPt.clone())
       this.preview?.remove()
       this.preview = new paper.Path(this.polygonPoints.map((p) => p.clone()))
       this.styleNew(this.preview)
@@ -1281,12 +1351,28 @@ export class CutForgeEditor {
   private onDrawDrag(e: paper.ToolEvent) {
     if (!this.dragStart) return
     this.docLayer.activate()
-    const pt = this.applySnap(e.point)
+    let pt = this.applySnap(e.point)
     if (this.tool === 'freehand' && this.currentPath) {
       this.currentPath.add(pt)
       return
     }
     if (this.tool === 'polygon' || this.tool === 'text') return
+
+    if (e.modifiers.shift && this.dragStart) {
+      if (this.tool === 'line') {
+        const c = constrainPointToAngle(this.dragStart, pt)
+        pt = new paper.Point(c.x, c.y)
+      } else if (this.tool === 'rect' || this.tool === 'ellipse') {
+        // Shift = square / circle
+        const dx = pt.x - this.dragStart.x
+        const dy = pt.y - this.dragStart.y
+        const s = Math.max(Math.abs(dx), Math.abs(dy))
+        pt = new paper.Point(
+          this.dragStart.x + Math.sign(dx || 1) * s,
+          this.dragStart.y + Math.sign(dy || 1) * s,
+        )
+      }
+    }
 
     this.preview?.remove()
     if (this.tool === 'rect') {
@@ -1436,10 +1522,26 @@ export class CutForgeEditor {
     }
     if (e.key === 'Enter' && this.tool === 'polygon') this.finishPolygon()
     if (e.key === 'Escape') {
+      const drawing =
+        this.tool !== 'select' ||
+        this.polygonPoints.length > 0 ||
+        !!this.preview ||
+        !!this.currentPath ||
+        this.mode === 'marquee'
       this.polygonPoints = []
       this.clearPreview()
       this.clearMarquee()
-      this.setTool('select')
+      this.clearSmartGuides()
+      if (drawing && this.tool !== 'select') {
+        this.setTool('select')
+      } else if (this.selected.length) {
+        this.deselectAll()
+        this.status = 'Selection cleared'
+        this.notify()
+      } else {
+        this.setTool('select')
+      }
+      e.preventDefault()
     }
     const map: Record<string, Tool> = {
       v: 'select',

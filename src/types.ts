@@ -76,6 +76,8 @@ export interface EditorSnapshot {
   snap: SnapSettings
   fileName: string | null
   dirty: boolean
+  regMarks: boolean
+  tool: Tool
 }
 
 export const INCH_TO_MM = 25.4

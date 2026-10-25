@@ -1,28 +1,30 @@
 # CutForge
 
-Cross-platform desktop vector design app for **laser cutting / engraving** and **Silhouette** machines. **Tauri 2 + React + TypeScript + Paper.js**.
+Cross-platform vector design for **laser cutting / engraving** and **Silhouette** (Cameo). Built with **Tauri 2 + React + TypeScript + Paper.js**.
 
-## Features (v0.3)
+## Features (v0.4)
 
-- Dark UI: toolbar · rulers · align bar · canvas · inspector · layers
-- Page presets (Letter, A4, Cameo 4 / 4 Plus, custom); mm / in
+- Dark UI: toolbar · rulers · align · canvas · inspector · layers
+- Page presets: Letter, A4, Cameo 4 (12×12), Cameo 4 Plus (15×15), custom; mm / in
 - Tools: select, rect, ellipse, line, polygon, freehand, text
 - Marquee + Shift multi-select; move / resize / rotate; undo/redo
-- **Snap**: grid, edge/endpoint, smart guides (inspector toggles)
-- **Projects**: `.cutforge` JSON Save / Open / Save As; autosave recovery (~30s)
-- **Path ops**: unite / subtract / intersect; kerf outset/inset
-- Copy / paste / duplicate / select-all
-- Cut · Score · Engrave; hairline SVG for Silhouette
-- Export SVG + DXF (curves as dense polylines; CUT/SCORE/ENGRAVE layers)
-- Help cheatsheet (`?`)
+- **Snap**: grid, edges/endpoints, smart guides
+- **Angle constraints**: hold **Shift** → **15°** snaps for lines, polygon segments, and rotation; Shift+rect/ellipse → square/circle
+- **Projects**: `.cutforge` Save / Open / Save As; 30s autosave recovery
+- **Native file dialogs** in the Tauri app (browser pickers under `npm run dev`)
+- Path ops: unite / subtract / intersect; kerf outset/inset
+- Copy / paste / select-all; Esc cancels tool or clears selection
+- **Silhouette registration marks** (4 corner squares) for print-and-cut; SVG export aware
+- Cut · Score · Engrave; hairline (0.001 in) SVG
+- Export SVG + DXF (curves as polylines; CUT/SCORE/ENGRAVE)
 
 ## Run
 
 ```bash
 cd cutforge
 npm install
-npm run dev          # web UI
-npm run tauri:dev    # native (Rust 1.90+)
+npm run dev          # web UI (browser file pickers)
+npm run tauri:dev    # desktop (native dialogs; Rust 1.90+)
 npm run tauri:build
 ```
 
@@ -31,27 +33,35 @@ npm run tauri:build
 | Key | Action |
 |-----|--------|
 | V R E L P F T | Tools |
-| Drag empty / Shift+click | Marquee / toggle select |
+| **Shift** | 15° angle snap (line / polygon / rotate); square/circle (rect / ellipse) |
+| Drag empty / Shift+click | Marquee / toggle |
 | Ctrl/Cmd+A C V D | Select all / Copy / Paste / Duplicate |
-| Ctrl/Cmd+Z / Shift+Z / Y | Undo / Redo |
-| Ctrl/Cmd+S / Shift+S / O | Save / Save As / Open |
+| Ctrl/Cmd+Z · Shift+Z · Y | Undo / Redo |
+| Ctrl/Cmd+S · Shift+S · O | Save / Save As / Open |
 | Space+drag / Wheel | Pan / Zoom |
-| Delete / Esc / ? | Delete / Cancel / Help |
+| Delete / Backspace | Delete |
+| Esc | Cancel drawing, otherwise clear selection |
+| ? | Help |
 
-## Export notes
+## Export
 
-- **SVG**: mm or in `viewBox`; optional hairline `0.001in`. Text remains `<text>` (no glyph outline engine without bundling fonts).
-- **DXF**: mm; ellipses/arcs/beziers → LWPOLYLINE sampling; TEXT + bounds rect for text; layers CUT / SCORE / ENGRAVE.
+- **SVG**: page `viewBox` in mm or in; optional hairline; registration marks when enabled. Text stays as `<text>` (no glyph outline engine).
+- **DXF**: mm; ellipses/arcs → dense LWPOLYLINE; TEXT + bounds for text objects.
 
-## Project file
+## Known limits
 
-`.cutforge` JSON includes page, units, style, snap settings, and Paper.js object JSON. Recovery is stored in `localStorage` while the document is dirty.
+- Kerf offset is scale-about-center, not a true parallel curve
+- Text-to-path requires bundling fonts (not included)
+- Booleans need closed paths; open/self-intersecting paths may fail
+- No machine send / multi-mat jobs yet
+- Web mode cannot use OS file dialogs
 
-## Remaining gaps
+## Project layout
 
-- True parallel curve offset (current kerf offset is scale-about-center)
-- Snap-to-angle / constrain while drawing
-- Native file dialogs via Tauri (currently browser download/upload)
-- Font-based text-to-path (opentype) if/when fonts are bundled
-- Boolean robustness on open paths / self-intersections
-- Multi-mat jobs, registration marks, machine send
+```
+src/canvas/     Paper.js editor, snap, angles, booleans, reg marks
+src/export/     SVG + DXF
+src/io/         Tauri / browser file helpers
+src/project/    .cutforge format + autosave
+src-tauri/      Tauri 2 shell (dialog + fs plugins)
+```

@@ -27,7 +27,7 @@ export function exportSvg(
   parts.push(
     `<?xml version="1.0" encoding="UTF-8"?>`,
     `<svg xmlns="http://www.w3.org/2000/svg" width="${fmt(w)}${u}" height="${fmt(h)}${u}" viewBox="0 0 ${fmt(w)} ${fmt(h)}">`,
-    `<!-- CutForge export — Silhouette / laser friendly -->`,
+    `<!-- CutForge export — Silhouette / laser friendly; includes reg marks when enabled -->`,
   )
 
   const scale = unit === 'in' ? 1 / (PX_PER_MM * INCH_TO_MM) : 1 / PX_PER_MM
