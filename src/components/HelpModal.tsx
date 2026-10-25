@@ -10,7 +10,7 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
         onClick={(e) => e.stopPropagation()}
       >
         <header className="modal-header">
-          <h2>CutForge shortcuts</h2>
+          <h2>CutForge shortcuts · v0.5</h2>
           <button type="button" className="btn" onClick={onClose}>
             Close
           </button>
@@ -41,9 +41,15 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
             </tbody>
           </table>
           <p className="hint">
-            <strong>Angle constraint:</strong> hold Shift to snap lines, polygon
-            segments, and rotation to <strong>15°</strong> steps. Rect/ellipse
-            become square/circle with Shift.
+            <strong>Text → outlines:</strong> select text, pick a bundled OFL
+            font (Inter / Open Sans) in the inspector, then{' '}
+            <em>Convert text to outlines</em>. Result is editable Paper paths
+            with Cut/Score/Engrave styles preserved; undoable. Offline fonts
+            under <code>public/fonts/</code>.
+            <br />
+            <strong>Image trace:</strong> inspector → <em>Trace image…</em>,
+            choose PNG/JPG, tune threshold / path omit / simplify / mono vs
+            color, preview, then Place on canvas as cut paths.
             <br />
             Native file dialogs in the Tauri app; browser pickers when using{' '}
             <code>npm run dev</code>.

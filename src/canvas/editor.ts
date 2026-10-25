@@ -5,6 +5,7 @@ import { snapDelta, snapPoint } from './snap'
 import { booleanOperate, offsetPath } from './booleans'
 import { constrainPointToAngle, snapAngleDeg } from './angles'
 import { buildRegistrationMarks } from './regMarks'
+import { convertPointTextToOutlines } from './textOutlines'
 import { parseDocument, serializeDocument } from '../project/cutforgeDoc'
 import type { CutForgeDocument } from '../project/cutforgeDoc'
 import type {
@@ -382,6 +383,120 @@ export class CutForgeEditor {
     this.dirty = true
     this.selectItems([result])
     this.status = `Boolean ${op}`
+  }
+
+  hasSelectedText(): boolean {
+    return this.selected.some(
+      (i) => i.className === 'PointText' && !i.data.locked && i.visible,
+    )
+  }
+
+  async convertSelectedTextToOutlines(fontId = 'inter') {
+    const texts = this.selected.filter(
+      (i) =>
+        i.className === 'PointText' && !i.data.locked && i.visible,
+    ) as paper.PointText[]
+    if (!texts.length) {
+      this.status = 'Select text to convert to outlines'
+      this.notify()
+      return
+    }
+    const before = this.snapshotDoc()
+    this.docLayer.activate()
+    const created: paper.Item[] = []
+    try {
+      for (const t of texts) {
+        const font =
+          (t.data.fontId as string) || fontId
+        const outlined = await convertPointTextToOutlines(t, font)
+        if (!outlined) continue
+        this.docLayer.addChild(outlined)
+        const style = styleFromItem(t)
+        applyCutTypeVisual(
+          outlined,
+          (t.data.cutType as CutType) || 'cut',
+          style,
+        )
+        if (
+          outlined instanceof paper.Path ||
+          outlined instanceof paper.CompoundPath
+        ) {
+          const mm = (t.data.strokeWidthMm as number) || style.strokeWidthMm
+          outlined.strokeWidth = Math.max(mm * PX_PER_MM, style.hairline ? 0.75 : 0.5)
+          // Engrave keeps fill; cut/score typically stroke-only
+          if ((t.data.cutType || 'cut') !== 'engrave') {
+            outlined.fillColor = null
+          }
+        }
+        ensureMeta(outlined, outlined.data.name || 'Outlines')
+        t.remove()
+        created.push(outlined)
+      }
+    } catch (err) {
+      this.status = `Outline failed: ${String(err)}`
+      this.notify()
+      return
+    }
+    if (!created.length) {
+      this.status = 'No outlines produced'
+      this.notify()
+      return
+    }
+    this.history.pushBefore(before)
+    this.dirty = true
+    this.selectItems(created)
+    this.status = `Converted ${created.length} text object(s) to outlines`
+    this.notify()
+  }
+
+  /** Import traced SVG (from image tracer) scaled to fit ~80% of page width. */
+  importTracedSvg(svgText: string, sourceName = 'Trace') {
+    const before = this.snapshotDoc()
+    try {
+      this.docLayer.activate()
+      const item = paper.project.importSVG(svgText, {
+        expandShapes: true,
+        insert: false,
+      }) as paper.Item
+      if (!item) {
+        this.status = 'Trace import failed'
+        this.notify()
+        return
+      }
+      this.docLayer.addChild(item)
+      this.tagImported(item)
+      ensureMeta(item, sourceName)
+      const pw = this.page.widthMm * PX_PER_MM
+      const ph = this.page.heightMm * PX_PER_MM
+      const maxW = pw * 0.85
+      const maxH = ph * 0.85
+      if (item.bounds.width > maxW || item.bounds.height > maxH) {
+        const s =
+          Math.min(maxW / item.bounds.width, maxH / item.bounds.height) * 0.95
+        item.scale(s)
+      }
+      item.position = new paper.Point(pw / 2, ph / 2)
+      // Prefer cut stroke styling on traced paths
+      const walk = (it: paper.Item) => {
+        if (it instanceof paper.Path || it instanceof paper.CompoundPath) {
+          it.data.cutType = it.data.cutType || 'cut'
+          applyCutTypeVisual(it, 'cut', this.style)
+          this.applyStrokeWidth(it)
+          // Drop fills for cut-friendly line art unless engrave
+          if (this.style.cutType !== 'engrave') it.fillColor = null
+        }
+        if (it.children) for (const c of it.children) walk(c)
+      }
+      walk(item)
+      this.history.pushBefore(before)
+      this.dirty = true
+      this.selectItems([item])
+      this.status = `Traced image placed (${sourceName})`
+      this.notify()
+    } catch (err) {
+      this.status = `Trace place failed: ${String(err)}`
+      this.notify()
+    }
   }
 
   offsetSelected(offsetMm: number) {
@@ -896,6 +1011,7 @@ export class CutForgeEditor {
       tool: this.tool,
       objectCount: this.docLayer.children.length,
       canBoolean: this.canBoolean(),
+      hasText: this.hasSelectedText(),
     }
   }
 
@@ -1401,6 +1517,7 @@ export class CutForgeEditor {
         fontFamily: 'Inter, system-ui, sans-serif',
       })
       this.styleNew(t)
+      t.data.fontId = 'inter'
       this.docLayer.addChild(t)
       this.history.pushBefore(before)
       this.selectItems([t])

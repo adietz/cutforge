@@ -11,6 +11,7 @@ import type {
 } from '../types'
 import { HAIRLINE_MM, INCH_TO_MM } from '../types'
 import { LayersPanel } from './LayersPanel'
+import { BUNDLED_FONTS } from '../fonts/catalog'
 
 export function Inspector({
   unit,
@@ -39,6 +40,11 @@ export function Inspector({
   regMarks,
   onRegMarks,
   canBoolean,
+  hasText,
+  outlineFontId,
+  onOutlineFont,
+  onConvertOutlines,
+  onOpenTrace,
 }: {
   unit: Unit
   page: PagePreset
@@ -66,6 +72,11 @@ export function Inspector({
   regMarks: boolean
   onRegMarks: (enabled: boolean) => void
   canBoolean: boolean
+  hasText: boolean
+  outlineFontId: string
+  onOutlineFont: (id: string) => void
+  onConvertOutlines: () => void
+  onOpenTrace: () => void
 }) {
   const toDisplay = (mm: number) =>
     unit === 'in' ? +(mm / INCH_TO_MM).toFixed(3) : +mm.toFixed(2)
@@ -268,6 +279,47 @@ export function Inspector({
         </div>
       </label>
 
+      <h2>Text & images</h2>
+      <label className="field">
+        <span>Outline font (bundled OFL)</span>
+        <select
+          value={outlineFontId}
+          onChange={(e) => onOutlineFont(e.target.value)}
+        >
+          {BUNDLED_FONTS.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.name} ({f.license})
+            </option>
+          ))}
+        </select>
+      </label>
+      <button
+        type="button"
+        className="btn"
+        disabled={!hasText}
+        title={
+          hasText
+            ? 'Convert selected text to editable vector paths'
+            : 'Select a text object first'
+        }
+        onClick={onConvertOutlines}
+      >
+        Convert text to outlines
+      </button>
+      <button
+        type="button"
+        className="btn"
+        style={{ marginTop: 8 }}
+        onClick={onOpenTrace}
+        title="Import PNG/JPG and vectorize for cut paths"
+      >
+        Trace image…
+      </button>
+      <p className="hint tight">
+        Outlines use offline OFL fonts (Inter, Open Sans). Tracing works best on
+        high-contrast logos and line art.
+      </p>
+
       <h2>Path ops</h2>
       <div className="row wrap">
         <button
@@ -376,9 +428,9 @@ export function Inspector({
       />
 
       <p className="hint">
-        Text stays as text on SVG export (no font-outline engine). DXF adds a
-        TEXT entity plus a bounding rectangle. Convert fonts in Silhouette /
-        LightBurn if you need true glyph paths.
+        Use <strong>Convert text to outlines</strong> before export if your
+        cutter ignores fonts. DXF still emits TEXT + bounds for unconverted
+        text.
       </p>
     </aside>
   )

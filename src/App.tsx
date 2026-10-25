@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CanvasView } from './components/CanvasView'
 import { HelpModal } from './components/HelpModal'
+import { TraceModal } from './components/TraceModal'
 import { Inspector } from './components/Inspector'
 import { RecoveryModal } from './components/RecoveryModal'
 import { Toolbar } from './components/Toolbar'
@@ -58,6 +59,9 @@ export default function App() {
   const [regMarks, setRegMarks] = useState(false)
   const [objectCount, setObjectCount] = useState(0)
   const [canBoolean, setCanBoolean] = useState(false)
+  const [hasText, setHasText] = useState(false)
+  const [outlineFontId, setOutlineFontId] = useState('inter')
+  const [traceOpen, setTraceOpen] = useState(false)
   const recoveryJson = useRef<string | null>(null)
 
   const onUpdate = useCallback(
@@ -73,6 +77,7 @@ export default function App() {
       setTool(info.tool)
       setObjectCount(info.objectCount)
       setCanBoolean(info.canBoolean)
+      setHasText(info.hasText)
       setFileLabel(
         (info.fileName || 'Untitled.cutforge') + (info.dirty ? ' •' : ''),
       )
@@ -377,6 +382,13 @@ export default function App() {
           snap={snap}
           regMarks={regMarks}
           canBoolean={canBoolean}
+          hasText={hasText}
+          outlineFontId={outlineFontId}
+          onOutlineFont={setOutlineFontId}
+          onConvertOutlines={() =>
+            void editorRef.current?.convertSelectedTextToOutlines(outlineFontId)
+          }
+          onOpenTrace={() => setTraceOpen(true)}
           onUnit={onUnitChange}
           onPage={onPageId}
           onCustomSize={onCustomSize}
@@ -399,6 +411,11 @@ export default function App() {
         />
       </div>
       <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <TraceModal
+        open={traceOpen}
+        onClose={() => setTraceOpen(false)}
+        onApply={(svg, name) => editorRef.current?.importTracedSvg(svg, name)}
+      />
       <RecoveryModal
         open={recoveryOpen}
         savedAtLabel={recoveryLabel}

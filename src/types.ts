@@ -80,6 +80,7 @@ export interface EditorSnapshot {
   tool: Tool
   objectCount: number
   canBoolean: boolean
+  hasText: boolean
 }
 
 export const INCH_TO_MM = 25.4
