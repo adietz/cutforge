@@ -127,8 +127,8 @@ export function generateGpgl(
   }
 }
 
-function flattenByType(items: paper.Item[]): Record<CutType, paper.Item[]> {
-  const out: Record<CutType, paper.Item[]> = {
+function flattenByType(items: paper.Item[]): Record<'cut' | 'score' | 'engrave', paper.Item[]> {
+  const out: Record<'cut' | 'score' | 'engrave', paper.Item[]> = {
     cut: [],
     score: [],
     engrave: [],
@@ -138,6 +138,7 @@ function flattenByType(items: paper.Item[]): Record<CutType, paper.Item[]> {
     if (item.data?.isGuide || item.data?.isHandle || item.data?.isPage) return
     if (item.className === 'Path' || item.className === 'CompoundPath') {
       const ct = ((item.data?.cutType as CutType) || 'cut') as CutType
+      if (ct === 'print') return // print layer skipped for cutter
       out[ct === 'score' || ct === 'engrave' ? ct : 'cut'].push(item)
       return
     }

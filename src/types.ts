@@ -7,7 +7,7 @@ export type Tool =
   | 'freehand'
   | 'text'
 
-export type CutType = 'cut' | 'score' | 'engrave'
+export type CutType = 'cut' | 'score' | 'engrave' | 'print'
 
 export type Unit = 'mm' | 'in'
 
@@ -81,6 +81,7 @@ export interface EditorSnapshot {
   objectCount: number
   canBoolean: boolean
   hasText: boolean
+  printAndCut: boolean
 }
 
 export const INCH_TO_MM = 25.4

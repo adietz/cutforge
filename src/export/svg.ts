@@ -47,16 +47,18 @@ export function exportSvg(
   const useGroups = mode === 'lightburn' || mode === 'glowforge'
 
   if (useGroups) {
-    const buckets: Record<CutType, paper.Item[]> = {
+    const buckets: Record<string, paper.Item[]> = {
       cut: [],
       score: [],
       engrave: [],
+      print: [],
     }
     for (const item of flat) {
       const ct = ((item.data?.cutType as CutType) || 'cut') as CutType
-      buckets[ct === 'score' || ct === 'engrave' ? ct : 'cut'].push(item)
+      if (ct === 'print') buckets.print.push(item)
+      else buckets[ct === 'score' || ct === 'engrave' ? ct : 'cut'].push(item)
     }
-    for (const ct of ['cut', 'score', 'engrave'] as CutType[]) {
+    for (const ct of ['cut', 'score', 'engrave', 'print'] as const) {
       if (!buckets[ct].length) continue
       const label = ct.charAt(0).toUpperCase() + ct.slice(1)
       parts.push(`  <g id="${label}" data-cut-type="${ct}">`)
@@ -140,7 +142,9 @@ function itemToSvg(
     const p = t.point
     const fill =
       mode === 'lightburn' || mode === 'glowforge'
-        ? MACHINE_CUT_COLORS[cutType === 'score' || cutType === 'engrave' ? cutType : 'cut']
+        ? cutType === 'print'
+          ? '#9b59b6'
+          : MACHINE_CUT_COLORS[cutType === 'score' || cutType === 'engrave' ? cutType : 'cut']
         : colorStr(t.fillColor) || '#000'
     const escaped = escapeXml(t.content)
     return `  <text x="${fmt(p.x * scale)}" y="${fmt(p.y * scale)}" font-size="${fmt(Number(t.fontSize) * scale)}" fill="${fill}" data-cut-type="${cutType}" data-name="${escapeXml(String(item.data?.name || ''))}">${escaped}</text>`
@@ -155,10 +159,20 @@ function itemToSvg(
     let fill = colorStr(path.fillColor) || 'none'
 
     if (mode === 'lightburn') {
-      stroke = MACHINE_CUT_COLORS[cutType === 'score' || cutType === 'engrave' ? cutType : 'cut']
-      fill = 'none'
+      if (cutType === 'print') {
+        stroke = '#9b59b6'
+        // keep fill for print artwork
+      } else {
+        stroke =
+          MACHINE_CUT_COLORS[
+            cutType === 'score' || cutType === 'engrave' ? cutType : 'cut'
+          ]
+        fill = 'none'
+      }
     } else if (mode === 'glowforge') {
-      if (cutType === 'engrave') {
+      if (cutType === 'print') {
+        stroke = '#9b59b6'
+      } else if (cutType === 'engrave') {
         stroke = MACHINE_CUT_COLORS.engrave
         fill = MACHINE_CUT_COLORS.engrave
       } else if (cutType === 'score') {
@@ -170,7 +184,10 @@ function itemToSvg(
       }
     } else if (mode === 'silhouette') {
       // Keep document colors; hairline stroke already applied
-      if (cutType !== 'engrave' && fill !== 'none') fill = 'none'
+      // Print keeps fills; cut/score typically stroke-only
+      if (cutType !== 'engrave' && cutType !== 'print' && fill !== 'none') {
+        fill = 'none'
+      }
     }
 
     const dash =

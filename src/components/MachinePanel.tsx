@@ -3,7 +3,16 @@ import {
   DEFAULT_IKIER_PRESETS,
   type MachineLaserPresets,
 } from '../machine/presets'
+import {
+  MATERIAL_PRESETS,
+  clonePresets,
+  materialById,
+} from '../machine/materials'
 import { gcodeToLines, generateGcode } from '../machine/gcode'
+import {
+  estimateGcodeTime,
+  formatDuration,
+} from '../machine/jobEstimate'
 import {
   listSerialPorts,
   onGrblProgress,
@@ -58,6 +67,7 @@ export function MachinePanel({
   const [sending, setSending] = useState(false)
   const [progress, setProgress] = useState<SendProgress | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [materialId, setMaterialId] = useState('plywood-3mm')
 
   const refreshPorts = useCallback(async () => {
     if (!native) return
@@ -103,6 +113,11 @@ export function MachinePanel({
     [preview],
   )
 
+  const jobEst = useMemo(() => {
+    if (!preview) return null
+    return estimateGcodeTime(preview)
+  }, [preview])
+
   if (!open) return null
 
   const connect = async () => {
@@ -138,9 +153,10 @@ export function MachinePanel({
       setErr('Nothing to send — draw cut/score/engrave paths')
       return
     }
+    const est = estimateGcodeTime(preview)
     if (
       !window.confirm(
-        `Send ${lines.length} G-code lines to the laser?\n\nEnsure the bed is clear, lid/glasses as required, and origin is set. Cancel anytime — CutForge will command laser OFF.`,
+        `Send ${lines.length} G-code lines to the laser?\nEst. ${formatDuration(est.seconds)} (cut ${est.cutMm.toFixed(0)} mm).\n\nEnsure the bed is clear, lid/glasses as required, and origin is set. Cancel anytime — CutForge will command laser OFF.`,
       )
     ) {
       return
@@ -183,6 +199,15 @@ export function MachinePanel({
       ...prev,
       [key]: { ...prev[key], [field]: value },
     }))
+  }
+
+  const applyMaterial = (id: string) => {
+    setMaterialId(id)
+    if (id === 'custom') return
+    const mat = materialById(id)
+    setPresets(clonePresets(mat.presets))
+    if (mat.colorMap?.length) onColorMap(mat.colorMap.map((e) => ({ ...e })))
+    onStatus(`Material: ${mat.name} (calibrate on scrap)`)
   }
 
   return (
@@ -309,6 +334,26 @@ export function MachinePanel({
               ))}
             </div>
 
+            <h3 style={{ marginTop: 14 }}>Material</h3>
+            <label className="field">
+              <span>IKIER K1 starter preset</span>
+              <select
+                value={materialId}
+                onChange={(e) => applyMaterial(e.target.value)}
+              >
+                {MATERIAL_PRESETS.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="hint tight">
+              {materialById(materialId).description} Applies speed/power
+              {materialById(materialId).colorMap ? ' + color map' : ''}; edit
+              freely after.
+            </p>
+
             <h3 style={{ marginTop: 14 }}>Laser color map</h3>
             <LaserColorMapEditor map={colorMap} onChange={onColorMap} compact />
 
@@ -427,6 +472,16 @@ export function MachinePanel({
           </div>
           <div className="machine-panel-right">
             <h3>G-code preview ({lineCount} lines)</h3>
+            {jobEst && (
+              <p className="hint tight job-estimate">
+                Est. {formatDuration(jobEst.seconds)} · cut{' '}
+                {jobEst.cutMm.toFixed(0)} mm · travel{' '}
+                {jobEst.travelMm.toFixed(0)} mm · {jobEst.moves} moves
+                <br />
+                Rough motion time only (no accel/pierce) — usually longer on
+                machine.
+              </p>
+            )}
             <pre className="gcode-preview">{preview || '; empty'}</pre>
           </div>
         </div>

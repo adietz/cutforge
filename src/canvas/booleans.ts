@@ -1,5 +1,13 @@
 import paper from 'paper'
+import ClipperLib from 'clipper-lib'
 import type { BooleanOp } from '../types'
+
+void paper
+
+type IntPoint = { X: number; Y: number }
+
+/** Clipper integer scale — ~0.001 px resolution */
+const CLIP_SCALE = 1000
 
 function asPathItem(item: paper.Item): paper.PathItem | null {
   if (item instanceof paper.Path || item instanceof paper.CompoundPath) {
@@ -52,9 +60,66 @@ export function booleanOperate(
   return result
 }
 
+/** Sample a Paper path into a Clipper polygon (closed). */
+function pathToClipper(path: paper.Path): IntPoint[] {
+  const pts: IntPoint[] = []
+  const len = path.length
+  if (len === 0 && path.segments.length) {
+    for (const s of path.segments) {
+      pts.push({
+        X: Math.round(s.point.x * CLIP_SCALE),
+        Y: Math.round(s.point.y * CLIP_SCALE),
+      })
+    }
+  } else {
+    // Adaptive sampling — denser on curves
+    const step = Math.max(0.4, len / 250)
+    const n = Math.max(8, Math.ceil(len / step))
+    for (let i = 0; i < n; i++) {
+      const pt = path.getPointAt((i / n) * len)
+      if (!pt) continue
+      pts.push({
+        X: Math.round(pt.x * CLIP_SCALE),
+        Y: Math.round(pt.y * CLIP_SCALE),
+      })
+    }
+  }
+  // Drop near-duplicates
+  const cleaned: IntPoint[] = []
+  for (const p of pts) {
+    const last = cleaned[cleaned.length - 1]
+    if (last && last.X === p.X && last.Y === p.Y) continue
+    cleaned.push(p)
+  }
+  if (
+    cleaned.length > 2 &&
+    cleaned[0].X === cleaned[cleaned.length - 1].X &&
+    cleaned[0].Y === cleaned[cleaned.length - 1].Y
+  ) {
+    cleaned.pop()
+  }
+  return cleaned
+}
+
+function clipperToPath(poly: IntPoint[]): paper.Path {
+  const path = new paper.Path({ insert: false })
+  if (!poly.length) return path
+  path.moveTo(
+    new paper.Point(poly[0].X / CLIP_SCALE, poly[0].Y / CLIP_SCALE),
+  )
+  for (let i = 1; i < poly.length; i++) {
+    path.lineTo(
+      new paper.Point(poly[i].X / CLIP_SCALE, poly[i].Y / CLIP_SCALE),
+    )
+  }
+  path.closePath()
+  path.simplify(0.15)
+  return path
+}
+
 /**
- * Kerf-style offset via scale-about-center (not a true parallel curve).
- * Positive = outset, negative = inset.
+ * True parallel kerf offset via Clipper (Angus Johnson).
+ * Positive = outset (expand), negative = inset (shrink). Units: document pixels.
  */
 export function offsetPath(
   item: paper.Item,
@@ -62,12 +127,42 @@ export function offsetPath(
 ): paper.PathItem | null {
   const path = asPathItem(item)
   if (!path || !ensureClosed(path)) return null
-  const clone = path.clone({ insert: false }) as paper.PathItem
-  const b = clone.bounds
-  const rx = b.width / 2
-  const ry = b.height / 2
-  const r = Math.max(1, (rx + ry) / 2)
-  const factor = Math.max(0.05, (r + offsetPx) / r)
-  clone.scale(factor, b.center)
-  return clone
+  if (Math.abs(offsetPx) < 1e-6) {
+    return path.clone({ insert: false }) as paper.PathItem
+  }
+
+  const sourcePaths: paper.Path[] =
+    path instanceof paper.CompoundPath
+      ? (path.children.filter((c) => c instanceof paper.Path) as paper.Path[])
+      : [path as paper.Path]
+
+  const clipPaths: IntPoint[][] = []
+  for (const sp of sourcePaths) {
+    if (!sp.closed || sp.segments.length < 2) continue
+    const poly = pathToClipper(sp)
+    if (poly.length >= 3) clipPaths.push(poly)
+  }
+  if (!clipPaths.length) return null
+
+  const co = new ClipperLib.ClipperOffset(2.0, 0.25 * CLIP_SCALE)
+  co.AddPaths(
+    clipPaths,
+    ClipperLib.JoinType.jtRound,
+    ClipperLib.EndType.etClosedPolygon,
+  )
+  const solution: IntPoint[][] = []
+  co.Execute(solution, offsetPx * CLIP_SCALE)
+
+  if (!solution.length) return null
+
+  const paperPaths = solution
+    .filter((poly) => poly.length >= 3)
+    .map((poly) => clipperToPath(poly))
+  if (!paperPaths.length) return null
+
+  if (paperPaths.length === 1) return paperPaths[0]
+  return new paper.CompoundPath({
+    children: paperPaths,
+    insert: false,
+  })
 }

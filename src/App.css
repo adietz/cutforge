@@ -785,3 +785,11 @@ kbd {
   border: 1px solid #2a3140;
   background: transparent;
 }
+
+.cut-types .print.active {
+  background: #6c3483;
+  border-color: #9b59b6;
+}
+.print-cut-actions {
+  margin: 8px 0 12px;
+}

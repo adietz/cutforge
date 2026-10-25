@@ -9,6 +9,7 @@ export const CUT_TYPE_DEFAULTS: Record<
   cut: { stroke: '#e74c3c', fill: null },
   score: { stroke: '#f39c12', fill: null, dash: [6, 4] },
   engrave: { stroke: '#3498db', fill: 'rgba(52,152,219,0.25)' },
+  print: { stroke: '#9b59b6', fill: 'rgba(155,89,182,0.35)' },
 }
 
 export function applyCutTypeVisual(
@@ -22,7 +23,7 @@ export function applyCutTypeVisual(
   const fill =
     style?.fillColor !== undefined
       ? style.fillColor
-      : cutType === 'engrave'
+      : cutType === 'engrave' || cutType === 'print'
         ? defaults.fill
         : null
 

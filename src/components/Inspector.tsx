@@ -41,6 +41,11 @@ export function Inspector({
   onOffset,
   regMarks,
   onRegMarks,
+  printAndCut,
+  onPrintAndCut,
+  onExportPrintPng,
+  onExportPrintPdf,
+  onExportCutSvg,
   canBoolean,
   hasText,
   outlineFontId,
@@ -75,6 +80,11 @@ export function Inspector({
   onOffset: (offsetMm: number) => void
   regMarks: boolean
   onRegMarks: (enabled: boolean) => void
+  printAndCut: boolean
+  onPrintAndCut: (enabled: boolean) => void
+  onExportPrintPng: () => void
+  onExportPrintPdf: () => void
+  onExportCutSvg: () => void
   canBoolean: boolean
   hasText: boolean
   outlineFontId: string
@@ -145,14 +155,42 @@ export function Inspector({
         </button>
       </div>
 
-      <label className="check-field">
+            <label className="check-field">
         <input
           type="checkbox"
           checked={regMarks}
           onChange={(e) => onRegMarks(e.target.checked)}
         />
-        <span>Silhouette registration marks</span>
+        <span>Registration marks</span>
       </label>
+      <label className="check-field">
+        <input
+          type="checkbox"
+          checked={printAndCut}
+          onChange={(e) => onPrintAndCut(e.target.checked)}
+        />
+        <span>Print &amp; Cut mode (enables marks)</span>
+      </label>
+      {printAndCut && (
+        <div className="print-cut-actions">
+          <p className="hint tight">
+            Mark artwork as <strong>print</strong> (inkjet). Knife paths stay
+            Cut/Score. Export print sheet, then cut with marks.
+          </p>
+          <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+            <button type="button" className="btn" onClick={onExportPrintPng}>
+              Print PNG
+            </button>
+            <button type="button" className="btn" onClick={onExportPrintPdf}>
+              Print PDF
+            </button>
+            <button type="button" className="btn" onClick={onExportCutSvg}>
+              Cut SVG
+            </button>
+          </div>
+        </div>
+      )}
+
       <p className="hint tight">
         Four corner marks for Cameo print-and-cut; included in SVG export.
       </p>
@@ -213,7 +251,7 @@ export function Inspector({
       <h2>Style {selectedCount ? `(${selectedCount})` : ''}</h2>
 
       <div className="seg cut-types">
-        {(['cut', 'score', 'engrave'] as CutType[]).map((ct) => (
+        {(['cut', 'score', 'engrave', 'print'] as CutType[]).map((ct) => (
           <button
             key={ct}
             type="button"
@@ -448,8 +486,9 @@ export function Inspector({
         </div>
       </label>
       <p className="hint tight">
-        Offset scales about center (kerf-friendly for simple shapes). Boolean
-        needs closed paths; first selected is the subject for Subtract.
+        Kerf uses a true parallel offset (Clipper). Positive outset / negative
+        inset on closed paths. Boolean needs closed paths; first selected is the
+        subject for Subtract.
       </p>
 
       <h2>Selection</h2>

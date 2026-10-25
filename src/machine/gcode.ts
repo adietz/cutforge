@@ -59,6 +59,7 @@ export function generateGcode(
   const colorMap = options.colorMap ?? []
   for (const item of flat) {
     const cutType = ((item.data?.cutType as CutType) || 'cut') as CutType
+    if (cutType === 'print') continue // inkjet only — not lasered
     const base =
       cutType === 'engrave'
         ? p.engrave

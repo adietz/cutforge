@@ -120,6 +120,7 @@ export class CutForgeEditor {
   private cursorListeners: ((c: CursorInfo | null) => void)[] = []
   private regMarksEnabled = false
   private regMarksGroup: paper.Group | null = null
+  private printAndCutMode = false
   private rotateBaseDeg = 0
 
   constructor(canvas: HTMLCanvasElement, page: PagePreset) {
@@ -268,6 +269,23 @@ export class CutForgeEditor {
     this.status = enabled
       ? 'Registration marks on (Cameo print-and-cut)'
       : 'Registration marks off'
+    this.notify()
+  }
+
+  isPrintAndCutMode() {
+    return this.printAndCutMode
+  }
+
+  setPrintAndCutMode(enabled: boolean) {
+    this.printAndCutMode = enabled
+    if (enabled && !this.regMarksEnabled) {
+      this.regMarksEnabled = true
+      this.rebuildRegMarks()
+    }
+    this.dirty = true
+    this.status = enabled
+      ? 'Print & Cut mode — use Print type for artwork, Cut/Score for knife'
+      : 'Print & Cut mode off'
     this.notify()
   }
 
@@ -575,14 +593,15 @@ export class CutForgeEditor {
       created.push(out)
     }
     if (!created.length) {
-      this.status = 'Offset needs closed paths'
+      this.status =
+        'Offset failed — need closed paths (true parallel kerf via Clipper)'
       this.notify()
       return
     }
     this.history.pushBefore(before)
     this.dirty = true
     this.selectItems(created)
-    this.status = `Offset ${offsetMm} mm`
+    this.status = `Kerf offset ${offsetMm >= 0 ? '+' : ''}${offsetMm.toFixed(3)} mm (parallel)`
   }
 
   toProjectJSON(name = 'Untitled'): string {
@@ -594,6 +613,7 @@ export class CutForgeEditor {
       snap: this.snapSettings,
       objects: this.getDocItems(),
       regMarks: this.regMarksEnabled,
+      printAndCut: this.printAndCutMode,
       laserColorMap: this.laserColorMap,
     })
   }
@@ -612,6 +632,7 @@ export class CutForgeEditor {
     )
     this.snapSettings = { ...DEFAULT_SNAP, ...parsed.snap }
     this.regMarksEnabled = !!parsed.regMarks
+    this.printAndCutMode = !!parsed.printAndCut
     this.fileName = parsed.name.endsWith('.cutforge')
       ? parsed.name
       : `${parsed.name}.cutforge`
@@ -1077,6 +1098,7 @@ export class CutForgeEditor {
       objectCount: this.docLayer.children.length,
       canBoolean: this.canBoolean(),
       hasText: this.hasSelectedText(),
+      printAndCut: this.printAndCutMode,
     }
   }
 

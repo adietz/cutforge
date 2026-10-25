@@ -1,78 +1,42 @@
 # CutForge
 
-Vector design for **IKIER K1** (GRBL diode laser) and **Silhouette** cutters.  
-**Tauri 2 + React + TypeScript + Paper.js**.
+Daily-driver vector design for **IKIER K1** (GRBL diode laser) and **Silhouette** cutters.  
+**Tauri 2 + React + TypeScript + Paper.js** · **v1.0.0**
 
-## Features (v0.9.0)
+## Feature summary
 
-- Editor, snap, booleans, text→outlines, image tracing, machine file export
-- **Send to K1** — USB serial G-code with denser/angled/cross-hatch engrave fills
-- **Send to Silhouette** — USB GPGL to Cameo / Portrait (open Graphtec protocol)
-- **Line & fill colors** — first-class stroke/fill in the inspector (picker + hex)
-- **Laser color map** — map hex colors → power S / optional feed; overrides
-  presets on Send to K1 when stroke (vectors) or fill (engrave) matches
-- SVG/DXF export remains; LightBurn optional
+| Area | What you get |
+|------|----------------|
+| Editor | Tools, snap, layers, undo, booleans, text→outlines, image trace, `.cutforge` |
+| Kerf | **True parallel** inset/outset (Clipper) on closed paths |
+| Colors | Free stroke/fill · color→laser power map |
+| K1 | USB G-code, materials, hatch engrave, job time estimate, M5 safety |
+| Silhouette | USB GPGL · **Print & Cut** (print PNG/PDF + cut SVG/GPGL + reg marks) |
+| Export | SVG / DXF machine profiles (LightBurn optional) |
 
-## Engrave fills (K1)
+## Print & Cut (Silhouette)
 
-In **Send to K1**, Engrave paths that are **closed** are filled with hatch lines:
+1. Enable **Print & Cut mode** (inspector) — turns on registration marks.
+2. Style inkjet artwork as **print**; knife paths as **Cut** / **Score**.
+3. **Print PNG** or **Print PDF** → inkjet (marks included).
+4. Load the print on the mat; **Cut SVG** or **Send to Silhouette** (print objects skipped).
+5. Optical sensor seek is limited in-app — for full Studio-style registration, open the Cut SVG in Silhouette Studio after printing.
 
-| Control | Default | Notes |
-|---------|---------|--------|
-| Hatch mm | 0.2 | Line spacing (denser = smaller) |
-| Angle ° | 0 | 0 = horizontal |
-| Cross-hatch | off | Second pass at angle+90° |
+## Kerf / materials / estimate
 
-Cut and Score stay pure vectors. Cancel / disconnect still commands **M5**.
-
-## Laser color map (v0.9)
-
-Inspector **Laser color map** (also in Send to K1):
-
-1. Color each object (stroke and/or fill).
-2. Add map rows: hex, match stroke/fill/either, power **S**, optional feed **F**.
-3. On G-code send, a matching color overrides the Cut/Score/Engrave preset power
-   (and speed if F is set). Operation type still comes from Cut/Score/Engrave.
-
-Persisted in `.cutforge` as `laserColorMap`.
-
-## Send to Silhouette (USB)
-
-Top bar → **Send to Silhouette** (desktop app).
-
-1. Plug Cameo / Portrait via USB → **Refresh**
-2. Set speed/pressure per Cut / Score / Engrave
-3. Preview GPGL → **Save .gpgl** or **Send to cutter**
-
-**Mapping:** Cut → blade · Score → light blade (kiss) · Engrave → pen/draw (`FC0`).
-
-**Models (USB VID `0x0b4d`, plus Cameo 5 Alpha `0x3844`):** Cameo 1–5 / Plus / Pro,
-Portrait 1–4 (same family as [inkscape-silhouette](https://github.com/fablabnbg/inkscape-silhouette)).
-
-| Platform | Notes |
-|----------|--------|
-| Linux | udev rule for `0b4d` or add user to `lp`; may need to detach usblp |
-| macOS | Allow USB accessories when prompted |
-| Windows | libusb via WinUSB/Zadig may be required; Studio cannot hold the device |
-| Browser | Preview + save dump only — no USB |
-| Bluetooth | Not in v0.8 |
-
-**Fallback:** export SVG / GPGL dump and use Silhouette Studio or inkscape-silhouette.
-
-## Send to IKIER K1
-
-See v0.7 docs: serial 115200, mm absolute, origin lower-left Y-up. Desktop only.
+- Path ops → Kerf offset (parallel outset/inset, undoable).
+- Send to K1 → material starters (plywood / acrylic / cardboard) + rough job time from G-code length÷feed.
 
 ## Run
 
 ```bash
 npm install
-npm run tauri:dev    # USB features
+npm run tauri:dev
 npm run build && cd src-tauri && cargo check
 ```
 
-## Limits
+## Still open
 
-- Silhouette send is a pragmatic GPGL subset (no reg-mark seek, no BLE)
-- Engrave hatch is scanline-based (not bitmap)
-- No Wi‑Fi machine links
+- No Wi‑Fi send; Silhouette BLE / full reg-mark sensor seek not implemented
+- Job estimate ignores accel/pierce; material numbers are starters only
+- Kerf needs closed paths; engrave hatch is scanline not bitmap

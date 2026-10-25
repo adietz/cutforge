@@ -20,6 +20,8 @@ export interface CutForgeDocument {
   style: DocStyle
   snap: SnapSettings
   regMarks?: boolean
+  /** Print & Cut workflow (Silhouette) */
+  printAndCut?: boolean
   /** Color → laser power/speed map for Send to K1 */
   laserColorMap?: LaserColorMapEntry[]
   objects: string[]
@@ -34,6 +36,7 @@ export function serializeDocument(opts: {
   snap: SnapSettings
   objects: SerializableItem[]
   regMarks?: boolean
+  printAndCut?: boolean
   laserColorMap?: LaserColorMapEntry[]
 }): string {
   const doc: CutForgeDocument = {
@@ -45,6 +48,7 @@ export function serializeDocument(opts: {
     style: { ...opts.style },
     snap: { ...opts.snap },
     regMarks: !!opts.regMarks,
+    printAndCut: !!opts.printAndCut,
     laserColorMap: opts.laserColorMap?.length
       ? opts.laserColorMap
       : DEFAULT_LASER_COLOR_MAP.map((e) => ({ ...e })),
@@ -75,6 +79,7 @@ export function parseDocument(text: string): CutForgeDocument {
     snap: { ...DEFAULT_SNAP, ...(data.snap || {}) },
     name: data.name || 'Untitled',
     regMarks: !!data.regMarks,
+    printAndCut: !!data.printAndCut,
     laserColorMap: parseColorMap(data.laserColorMap),
   }
 }

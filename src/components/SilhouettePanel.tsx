@@ -29,6 +29,7 @@ export function SilhouettePanel({
   page: PagePreset
   onStatus: (s: string) => void
 }) {
+  const [printThenCut, setPrintThenCut] = useState(true)
   const native = silhouetteUsbAvailable()
   const [devices, setDevices] = useState<SilhouetteDeviceInfo[]>([])
   const [selected, setSelected] = useState('')
@@ -93,7 +94,11 @@ export function SilhouettePanel({
     }
     if (
       !window.confirm(
-        `Send ${job.pathCount} path(s) to the Silhouette?\n\nLoad media on the mat first. CutForge uses open GPGL over USB (inkscape-silhouette compatible).`,
+        `Send ${job.pathCount} path(s) to the Silhouette?\n\n` +
+          (printThenCut
+            ? 'Print-then-cut: confirm the inkjet print is loaded and marks are visible.\n'
+            : '') +
+          `Load media on the mat first. CutForge uses open GPGL over USB (inkscape-silhouette compatible).`,
       )
     ) {
       return
@@ -214,6 +219,27 @@ export function SilhouettePanel({
                 <span className="hint tight">{presets[key].tool}</span>
               </div>
             ))}
+
+            <h3 style={{ marginTop: 12 }}>Print &amp; cut</h3>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={printThenCut}
+                onChange={(e) => setPrintThenCut(e.target.checked)}
+              />
+              Print-then-cut workflow
+            </label>
+            {printThenCut && (
+              <p className="hint tight">
+                1) In the inspector enable <strong>Print &amp; Cut mode</strong>,
+                mark artwork as <strong>print</strong>, export Print PNG/PDF and
+                inkjet it. 2) Load the print on the mat with registration marks
+                visible. 3) Send cut GPGL from here (print objects are skipped).
+                Sensor/reg-mark seek is limited in CutForge — for full optical
+                registration use Silhouette Studio with the Cut SVG, or ensure
+                marks align manually.
+              </p>
+            )}
 
             <div className="row" style={{ gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
               <button type="button" className="btn" onClick={rebuild}>

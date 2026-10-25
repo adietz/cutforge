@@ -101,3 +101,33 @@ export async function saveTextFile(
   browserDownload(defaultName, text, mime)
   return { path: null, name: defaultName }
 }
+
+/** Save binary via Tauri dialog or browser download. */
+export async function saveBlobFile(
+  defaultName: string,
+  blob: Blob,
+  extensions: string[],
+  filterName: string,
+): Promise<{ path: string | null; name: string } | null> {
+  if (isTauri()) {
+    const { save } = await import('@tauri-apps/plugin-dialog')
+    const { writeFile } = await import('@tauri-apps/plugin-fs')
+    const path = await save({
+      defaultPath: defaultName,
+      filters: [{ name: filterName, extensions }],
+      title: `Save ${filterName}`,
+    })
+    if (!path) return null
+    const buf = new Uint8Array(await blob.arrayBuffer())
+    await writeFile(path, buf)
+    const name = path.split(/[/\\]/).pop() || defaultName
+    return { path, name }
+  }
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = defaultName
+  a.click()
+  URL.revokeObjectURL(url)
+  return { path: null, name: defaultName }
+}

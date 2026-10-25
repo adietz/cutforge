@@ -16,7 +16,12 @@ import { TopBar } from './components/TopBar'
 import type { CutForgeEditor } from './canvas/editor'
 import { exportDxf } from './export/dxf'
 import { exportSvg } from './export/svg'
-import { openTextFile, saveTextFile } from './io/files'
+import {
+  exportPrintSheet,
+  filterCutItems,
+  filterPrintItems,
+} from './export/printExport'
+import { openTextFile, saveBlobFile, saveTextFile } from './io/files'
 import { PAGE_PRESETS, presetById } from './pagePresets'
 import {
   clearRecovery,
@@ -68,6 +73,7 @@ export default function App() {
   const [recoveryOpen, setRecoveryOpen] = useState(false)
   const [recoveryLabel, setRecoveryLabel] = useState('')
   const [regMarks, setRegMarks] = useState(false)
+  const [printAndCut, setPrintAndCut] = useState(false)
   const [objectCount, setObjectCount] = useState(0)
   const [canBoolean, setCanBoolean] = useState(false)
   const [hasText, setHasText] = useState(false)
@@ -92,6 +98,7 @@ export default function App() {
       setLayers(info.layers)
       setSnap(info.snap)
       setRegMarks(info.regMarks)
+      setPrintAndCut(!!info.printAndCut)
       setTool(info.tool)
       setObjectCount(info.objectCount)
       setCanBoolean(info.canBoolean)
@@ -211,6 +218,7 @@ export default function App() {
       if (doc.laserColorMap) {
         setLaserColorMap(doc.laserColorMap.map((e) => ({ ...e })))
       }
+      setPrintAndCut(!!doc.printAndCut)
       setSnap({ ...DEFAULT_SNAP, ...doc.snap })
       setRegMarks(!!doc.regMarks)
       clearRecovery()
@@ -304,6 +312,7 @@ export default function App() {
     projectPathRef.current = null
     setPage({ ...PAGE_PRESETS[2] })
     setRegMarks(false)
+    setPrintAndCut(false)
     setLaserColorMap(DEFAULT_LASER_COLOR_MAP.map((e) => ({ ...e })))
     clearRecovery()
   }
@@ -349,6 +358,65 @@ export default function App() {
     if (result) setStatus(`Exported ${result.name}`)
   }
 
+
+
+  const onExportPrintPng = async () => {
+    const ed = editorRef.current
+    if (!ed) return
+    try {
+      const items = filterPrintItems(
+        ed.getExportItems({ includeRegMarks: false, excludeLocked: false }),
+      )
+      const { blob, filename, mime } = await exportPrintSheet(
+        items,
+        ed.getPage(),
+        'png',
+      )
+      const result = await saveBlobFile(filename, blob, ['png'], 'PNG')
+      if (result) setStatus(`Print sheet ${result.name} (${mime})`)
+    } catch (e) {
+      setStatus(`Print PNG failed: ${String(e)}`)
+    }
+  }
+
+  const onExportPrintPdf = async () => {
+    const ed = editorRef.current
+    if (!ed) return
+    try {
+      const items = filterPrintItems(
+        ed.getExportItems({ includeRegMarks: false, excludeLocked: false }),
+      )
+      const { blob, filename } = await exportPrintSheet(
+        items,
+        ed.getPage(),
+        'pdf',
+      )
+      const result = await saveBlobFile(filename, blob, ['pdf'], 'PDF')
+      if (result) setStatus(`Print PDF ${result.name}`)
+    } catch (e) {
+      setStatus(`Print PDF failed: ${String(e)}`)
+    }
+  }
+
+  const onExportCutSvg = async () => {
+    const ed = editorRef.current
+    if (!ed) return
+    const raw = ed.getExportItems({
+      includeRegMarks: true,
+      excludeLocked: true,
+      excludeHidden: true,
+    })
+    const items = filterCutItems(raw)
+    // keep reg mark group if present
+    const withMarks = raw.filter((i) => i.data?.isRegMark || items.includes(i))
+    const svg = exportSvg(withMarks.length ? withMarks : items, ed.getPage(), unit, {
+      hairline: true,
+      styleMode: 'silhouette',
+      comment: 'CutForge cut layer + registration marks (print-and-cut)',
+    })
+    const result = await saveTextFile('svg', 'cutforge-cut.svg', svg)
+    if (result) setStatus(`Cut SVG ${result.name}`)
+  }
 
   const openMachineExport = () => {
     const ed = editorRef.current
@@ -438,6 +506,7 @@ export default function App() {
       if (doc.laserColorMap) {
         setLaserColorMap(doc.laserColorMap.map((e) => ({ ...e })))
       }
+      setPrintAndCut(!!doc.printAndCut)
       setRegMarks(!!doc.regMarks)
       setStatus('Restored autosave')
     } catch (err) {
@@ -510,6 +579,11 @@ export default function App() {
           onStyle={applyStyle}
           onSnap={(p) => editorRef.current?.setSnap(p)}
           onRegMarks={(v) => editorRef.current?.setRegistrationMarks(v)}
+          printAndCut={printAndCut}
+          onPrintAndCut={(v) => editorRef.current?.setPrintAndCutMode(v)}
+          onExportPrintPng={() => void onExportPrintPng()}
+          onExportPrintPdf={() => void onExportPrintPdf()}
+          onExportCutSvg={() => void onExportCutSvg()}
           onDelete={() => editorRef.current?.deleteSelected()}
           onDuplicate={() => editorRef.current?.duplicateSelected()}
           onFit={() => editorRef.current?.fitPage()}
