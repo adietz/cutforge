@@ -31,7 +31,12 @@ function isEmptyPath(path: paper.PathItem): boolean {
 }
 
 /**
- * Boolean ops on two+ closed paths. First selected is the subject for subtract.
+ * Boolean ops on two+ closed paths.
+ * Selection order: **first selected = subject**; later items are operators.
+ * - unite (Weld): union of all
+ * - subtract: subject minus the rest
+ * - intersect / clip: intersection of all
+ * - exclude: XOR / symmetric difference chain
  */
 export function booleanOperate(
   items: paper.Item[],
@@ -49,7 +54,28 @@ export function booleanOperate(
     let next: paper.PathItem | null = null
     if (op === 'unite') next = result.unite(other)
     else if (op === 'subtract') next = result.subtract(other)
-    else next = result.intersect(other)
+    else if (op === 'exclude') {
+      // XOR / Exclude — Paper.js PathItem.exclude when available
+      const ex = (result as paper.PathItem & {
+        exclude?: (o: paper.PathItem) => paper.PathItem | null
+      }).exclude
+      if (typeof ex === 'function') {
+        next = ex.call(result, other)
+      } else {
+        const a = result.clone({ insert: false }) as paper.PathItem
+        const u = a.unite(other)
+        const inter = a.intersect(other)
+        a.remove()
+        if (u && inter && !isEmptyPath(inter)) {
+          next = u.subtract(inter)
+          u.remove()
+          inter.remove()
+        } else {
+          inter?.remove()
+          next = u
+        }
+      }
+    } else next = result.intersect(other) // intersect + clip
     result.remove()
     if (!next || isEmptyPath(next)) {
       next?.remove()

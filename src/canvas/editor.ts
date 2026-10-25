@@ -20,7 +20,7 @@ import {
   findNearestNode,
   insertNodeAtClick,
   isPathLike,
-  joinOpenEndpoints,
+  joinOpenPathChain,
   nodesToCusp,
   nodesToSmooth,
   segmentsToCurve,
@@ -167,6 +167,10 @@ export class CutForgeEditor {
   private shapeNodes: NodeRef[] = []
   private shapeNodeStarts: { ref: NodeRef; point: paper.Point }[] = []
   private handleDragKind: 'in' | 'out' | null = null
+  /** When set, editing children inside this group (dblclick to enter, Esc to leave). */
+  private isolatedGroup: paper.Group | null = null
+  /** Join endpoint tolerance in mm (open paths). */
+  private joinTolMm = 0.5
 
   constructor(canvas: HTMLCanvasElement, page: PagePreset) {
     this.canvas = canvas
@@ -249,6 +253,14 @@ export class CutForgeEditor {
         (i instanceof paper.Path && i.closed) ||
         i instanceof paper.CompoundPath,
     )
+  }
+
+  canJoinOpen(): boolean {
+    const paths = this.selected
+      .filter((i) => !i.data.locked && i.visible)
+      .flatMap((i) => collectPaths(i))
+      .filter((p) => !p.closed)
+    return paths.length >= 2
   }
 
   /** Document objects plus registration marks when enabled (for export). */
@@ -564,11 +576,20 @@ export class CutForgeEditor {
       )
     }
     ensureMeta(result, `Boolean ${op}`)
+    if (src.data?.layerId) result.data.layerId = src.data.layerId
+    this.attachToActiveLayer(result)
+    if (src.data?.layerId) result.data.layerId = src.data.layerId
     for (const i of items) i.remove()
     this.history.pushBefore(before)
     this.dirty = true
     this.selectItems([result])
-    this.status = `Boolean ${op}`
+    const labels: Record<BooleanOp, string> = {
+      unite: 'Weld / Unite',
+      subtract: 'Subtract',
+      intersect: 'Clip / Intersect',
+      exclude: 'Exclude (XOR)',
+    }
+    this.status = labels[op] || `Boolean ${op}`
   }
 
   hasSelectedText(): boolean {
@@ -1640,6 +1661,8 @@ export class CutForgeEditor {
       tool: this.tool,
       objectCount: this.docLayer.children.length,
       canBoolean: this.canBoolean(),
+      canUngroup: this.canUngroup(),
+      canJoin: this.canJoinOpen(),
       hasText: this.hasSelectedText(),
       printAndCut: this.printAndCutMode,
       activeLayerId: this.activeLayerId,
@@ -1928,6 +1951,7 @@ export class CutForgeEditor {
     })
     let item = hit?.item ?? null
     while (item && item.parent && item.parent !== this.docLayer) {
+      if (this.isolatedGroup && item.parent === this.isolatedGroup) break
       item = item.parent
     }
     if (!item || isGuide(item) || !item.visible || item.data.locked) return null
@@ -2467,6 +2491,15 @@ export class CutForgeEditor {
       return
     }
     const pt = paper.view.viewToProject(new paper.Point(e.offsetX, e.offsetY))
+    const hit = this.hitDrawable(pt)
+    if (
+      hit &&
+      (hit instanceof paper.Group || hit.data?.isGroup) &&
+      this.tool === 'select'
+    ) {
+      this.enterIsolatedGroup(hit as paper.Group)
+      return
+    }
     // Corel-like: dblclick node → delete; dblclick segment → add at click
     if (this.tool === 'shape' || this.tool === 'select') {
       if (this.handleShapeDblClick(pt)) return
@@ -2668,25 +2701,149 @@ export class CutForgeEditor {
   }
 
   shapeJoinEndpoints() {
-    const paths = this.selected.flatMap((i) => collectPaths(i)).filter((p) => !p.closed)
+    this.joinSelectedOpenPaths()
+  }
+
+  /** Join selected open paths end-to-end when endpoints are within joinTolMm. */
+  joinSelectedOpenPaths(tolMm?: number) {
+    const tol =
+      Math.max(
+        6 / paper.view.zoom,
+        (tolMm ?? this.joinTolMm) * PX_PER_MM,
+      )
+    const roots = this.selected.filter((i) => !i.data.locked && i.visible)
+    const paths = roots.flatMap((i) => collectPaths(i)).filter((p) => !p.closed)
     if (paths.length < 2) {
-      this.status = 'Select two open paths to join'
+      this.status = 'Select 2+ open paths to Join'
       this.notify()
       return
     }
     const before = this.snapshotDoc()
-    const ok = joinOpenEndpoints(paths[0], paths[1], 8 / paper.view.zoom)
-    if (!ok) {
-      this.status = 'Endpoints too far to join'
+    const { joined, mergeCount } = joinOpenPathChain(paths, tol)
+    if (!mergeCount) {
+      this.status = `Endpoints farther than ${this.joinTolMm} mm — move ends closer or raise tolerance`
       this.notify()
       return
     }
+    // Remove empty parents (CompoundPath with no children, etc.)
+    for (const r of roots) {
+      if (r instanceof paper.CompoundPath && r.children.length === 0) r.remove()
+      else if (r instanceof paper.Path && !r.segments.length) r.remove()
+    }
     this.history.pushBefore(before)
     this.dirty = true
-    this.selectItems([paths[0]])
+    this.selectItems(joined.filter((p) => p.parent))
     this.shapeNodes = []
     this.drawHandles()
-    this.status = 'Joined open paths'
+    this.status = `Joined ${mergeCount} connection(s) (tol ${this.joinTolMm} mm)`
+    this.notify()
+  }
+
+  setJoinToleranceMm(mm: number) {
+    this.joinTolMm = Math.max(0.05, Math.min(20, mm))
+  }
+
+  getJoinToleranceMm() {
+    return this.joinTolMm
+  }
+
+  /** Weld = boolean unite (closed paths). */
+  weldSelected() {
+    this.booleanSelected('unite')
+  }
+
+  /** Clip = intersect (keep overlap). First selected = subject. */
+  clipSelected() {
+    this.booleanSelected('intersect')
+  }
+
+  groupSelected() {
+    const items = this.selected.filter(
+      (i) => !i.data.locked && i.visible && !isGuide(i),
+    )
+    if (items.length < 2) {
+      this.status = 'Select 2+ objects to Group'
+      this.notify()
+      return
+    }
+    // Don't nest already-isolated partials oddly — leave isolate first
+    this.leaveIsolatedGroup(false)
+    const before = this.snapshotDoc()
+    this.docLayer.activate()
+    const g = new paper.Group()
+    g.data.isGroup = true
+    // Preserve layer from first item
+    const layerId = items[0].data?.layerId
+    for (const it of items) {
+      g.addChild(it)
+    }
+    if (layerId) g.data.layerId = layerId
+    ensureMeta(g, 'Group')
+    this.attachToActiveLayer(g)
+    if (layerId) g.data.layerId = layerId
+    this.docLayer.addChild(g)
+    this.history.pushBefore(before)
+    this.dirty = true
+    this.selectItems([g])
+    this.status = `Grouped ${items.length} objects (⌘G)`
+    this.notify()
+  }
+
+  ungroupSelected() {
+    const groups = this.selected.filter(
+      (i) =>
+        (i instanceof paper.Group || i.data?.isGroup) &&
+        !i.data?.isHandle &&
+        !isGuide(i),
+    ) as paper.Group[]
+    if (!groups.length) {
+      this.status = 'Select a group to Ungroup'
+      this.notify()
+      return
+    }
+    this.leaveIsolatedGroup(false)
+    const before = this.snapshotDoc()
+    const released: paper.Item[] = []
+    for (const g of groups) {
+      const kids = [...g.children]
+      const layerId = g.data?.layerId
+      for (const c of kids) {
+        this.docLayer.addChild(c)
+        if (layerId && c.data) c.data.layerId = layerId
+        released.push(c)
+      }
+      g.remove()
+    }
+    this.history.pushBefore(before)
+    this.dirty = true
+    this.selectItems(released)
+    this.status = `Ungrouped → ${released.length} object(s)`
+    this.notify()
+  }
+
+  canUngroup(): boolean {
+    return this.selected.some(
+      (i) =>
+        (i instanceof paper.Group || i.data?.isGroup) &&
+        !i.data?.isHandle &&
+        !isGuide(i),
+    )
+  }
+
+  enterIsolatedGroup(g: paper.Group) {
+    this.isolatedGroup = g
+    const kids = [...g.children].filter((c) => c.visible && !c.data?.locked)
+    this.selectItems(kids.length ? kids : [g])
+    this.status = 'Inside group — Esc to leave · edit children'
+    this.notify()
+  }
+
+  leaveIsolatedGroup(reselect = true) {
+    const g = this.isolatedGroup
+    if (!g) return
+    this.isolatedGroup = null
+    if (reselect && g.parent) this.selectItems([g])
+    this.status = 'Left group'
     this.notify()
   }
 
@@ -2761,13 +2918,46 @@ export class CutForgeEditor {
       }
     }
 
-    if (hasSel) {
-      actions.push({ id: 'sep4', label: '', separator: true })
-      actions.push({ id: 'nest', label: 'Nest selection' })
-    }
+    const openCount = this.selected
+      .flatMap((i) => collectPaths(i))
+      .filter((p) => !p.closed).length
+    const canBool = this.canBoolean()
 
-    if (nodeMode && this.selected.filter((i) => collectPaths(i).some((p) => !p.closed)).length >= 2) {
-      actions.push({ id: 'join', label: 'Join open paths' })
+    actions.push({ id: 'sep4', label: '', separator: true })
+    actions.push({
+      id: 'join',
+      label: `Join open paths (≤${this.joinTolMm} mm)`,
+      disabled: openCount < 2,
+    })
+    actions.push({ id: 'weld', label: 'Weld / Unite', disabled: !canBool })
+    actions.push({
+      id: 'clip',
+      label: 'Clip (Intersect)',
+      disabled: !canBool,
+    })
+    actions.push({
+      id: 'subtract',
+      label: 'Subtract (first − rest)',
+      disabled: !canBool,
+    })
+    actions.push({
+      id: 'exclude',
+      label: 'Exclude (XOR)',
+      disabled: !canBool,
+    })
+    actions.push({ id: 'sep5', label: '', separator: true })
+    actions.push({
+      id: 'group',
+      label: 'Group',
+      disabled: this.selected.length < 2,
+    })
+    actions.push({
+      id: 'ungroup',
+      label: 'Ungroup',
+      disabled: !this.canUngroup(),
+    })
+    if (hasSel) {
+      actions.push({ id: 'nest', label: 'Nest selection' })
     }
 
     void nodeMode
@@ -2825,7 +3015,25 @@ export class CutForgeEditor {
         this.shapeBreakAtNode()
         break
       case 'join':
-        this.shapeJoinEndpoints()
+        this.joinSelectedOpenPaths()
+        break
+      case 'weld':
+        this.weldSelected()
+        break
+      case 'clip':
+        this.clipSelected()
+        break
+      case 'subtract':
+        this.booleanSelected('subtract')
+        break
+      case 'exclude':
+        this.booleanSelected('exclude')
+        break
+      case 'group':
+        this.groupSelected()
+        break
+      case 'ungroup':
+        this.ungroupSelected()
         break
       case 'nest':
         this.nestItems('selection', { gapMm: 2, marginMm: 2, allowRotate90: true })
@@ -2890,6 +3098,13 @@ export class CutForgeEditor {
       this.duplicateSelected()
       e.preventDefault()
     }
+    if (mod && e.key.toLowerCase() === 'g' && e.shiftKey) {
+      this.ungroupSelected()
+      e.preventDefault()
+    } else if (mod && e.key.toLowerCase() === 'g') {
+      this.groupSelected()
+      e.preventDefault()
+    }
     if (mod && e.key.toLowerCase() === 'a') {
       this.selectAll()
       e.preventDefault()
@@ -2912,6 +3127,11 @@ export class CutForgeEditor {
     }
     if (e.key === 'Enter' && this.tool === 'polygon') this.finishPolygon()
     if (e.key === 'Escape') {
+      if (this.isolatedGroup) {
+        this.leaveIsolatedGroup(true)
+        e.preventDefault()
+        return
+      }
       const drawing =
         this.tool !== 'select' ||
         this.polygonPoints.length > 0 ||
@@ -2922,7 +3142,7 @@ export class CutForgeEditor {
       this.clearPreview()
       this.clearMarquee()
       this.clearSmartGuides()
-      if (drawing && this.tool !== 'select') {
+      if (drawing && this.tool !== 'select' && this.tool !== 'shape') {
         this.setTool('select')
       } else if (this.selected.length) {
         this.deselectAll()

@@ -65,6 +65,10 @@ export default function App() {
   const [selectedCount, setSelectedCount] = useState(0)
   const [zoom, setZoom] = useState(1)
   const [status, setStatus] = useState('Ready')
+  const [canBoolean, setCanBoolean] = useState(false)
+  const [canUngroup, setCanUngroup] = useState(false)
+  const [canJoin, setCanJoin] = useState(false)
+  const [joinTolMm, setJoinTolMm] = useState(0.5)
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
   const [layers, setLayers] = useState<LayerInfo[]>([])
@@ -78,7 +82,6 @@ export default function App() {
   const [regMarks, setRegMarks] = useState(false)
   const [printAndCut, setPrintAndCut] = useState(false)
   const [objectCount, setObjectCount] = useState(0)
-  const [canBoolean, setCanBoolean] = useState(false)
   const [hasText, setHasText] = useState(false)
   const [outlineFontId, setOutlineFontId] = useState('inter')
   const [traceOpen, setTraceOpen] = useState(false)
@@ -105,6 +108,8 @@ export default function App() {
       setTool(info.tool)
       setObjectCount(info.objectCount)
       setCanBoolean(info.canBoolean)
+      setCanUngroup(!!info.canUngroup)
+      setCanJoin(!!info.canJoin)
       setHasText(info.hasText)
       setFileLabel(
         (info.fileName || 'Untitled.cutforge') + (info.dirty ? ' •' : ''),
@@ -554,6 +559,11 @@ export default function App() {
           onCursor={onCursor}
           selectedCount={selectedCount}
           objectCount={objectCount}
+          canBoolean={canBoolean}
+          canUngroup={canUngroup}
+          canJoin={canJoin}
+          joinTolMm={joinTolMm}
+          setJoinTolMm={setJoinTolMm}
         />
         <Inspector
           unit={unit}

@@ -445,24 +445,25 @@ export function Inspector({
           type="button"
           className="btn"
           disabled={!canBoolean}
-          title={
-            canBoolean
-              ? 'Unite selected closed paths'
-              : 'Select 2+ closed paths (rect, ellipse, closed polygon)'
-          }
+          title="Weld / Unite closed paths"
           onClick={() => onBoolean('unite')}
         >
-          Unite
+          Weld
         </button>
         <button
           type="button"
           className="btn"
           disabled={!canBoolean}
-          title={
-            canBoolean
-              ? 'Subtract others from first selected'
-              : 'Select 2+ closed paths'
-          }
+          title="Clip / Intersect — keep overlap (first = subject)"
+          onClick={() => onBoolean('intersect')}
+        >
+          Clip
+        </button>
+        <button
+          type="button"
+          className="btn"
+          disabled={!canBoolean}
+          title="Subtract — first selected minus the rest"
           onClick={() => onBoolean('subtract')}
         >
           Subtract
@@ -471,14 +472,10 @@ export function Inspector({
           type="button"
           className="btn"
           disabled={!canBoolean}
-          title={
-            canBoolean
-              ? 'Intersect selected closed paths'
-              : 'Select 2+ closed paths'
-          }
-          onClick={() => onBoolean('intersect')}
+          title="Exclude / XOR"
+          onClick={() => onBoolean('exclude')}
         >
-          Intersect
+          Exclude
         </button>
       </div>
       <label className="field">
@@ -513,9 +510,10 @@ export function Inspector({
         </div>
       </label>
       <p className="hint tight">
-        Kerf uses a true parallel offset (Clipper). Positive outset / negative
-        inset on closed paths. Boolean needs closed paths; first selected is the
-        subject for Subtract.
+        Kerf uses Clipper offset. Booleans need closed paths. Selection order:
+        <strong>first selected = subject</strong>; later shapes are operators
+        (Subtract: subject − rest; Clip = Intersect; Weld = Unite; Exclude = XOR).
+        Arrange bar: Join open paths, Group (⌘G) / Ungroup (⌘⇧G).
       </p>
 
       <h2>Selection</h2>

@@ -22,7 +22,7 @@ export type AlignMode =
   | 'distributeH'
   | 'distributeV'
 
-export type BooleanOp = 'unite' | 'subtract' | 'intersect'
+export type BooleanOp = 'unite' | 'subtract' | 'intersect' | 'exclude'
 
 export interface PagePreset {
   id: string
@@ -89,6 +89,8 @@ export interface EditorSnapshot {
   tool: Tool
   objectCount: number
   canBoolean: boolean
+  canUngroup: boolean
+  canJoin: boolean
   hasText: boolean
   printAndCut: boolean
   activeLayerId: string

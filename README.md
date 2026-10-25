@@ -1,7 +1,7 @@
 # CutForge
 
 Daily-driver vector design for **IKIER K1** (GRBL diode laser) and **Silhouette** cutters.  
-**Tauri 2 + React + TypeScript + Paper.js** · **v1.7.0**
+**Tauri 2 + React + TypeScript + Paper.js** · **v1.8.0**
 
 ## Feature summary
 
@@ -48,6 +48,12 @@ Each profile stores: name, type (laser GRBL / Silhouette), bed W×H mm, origin c
 
 See Help and `docs/IMPORT.md`.
 
+
+## Join / Clip / Group (v1.8)
+
+- **Join** — selected open paths, end-to-end when endpoints are within **Tol** mm (Arrange bar). Undoable.
+- **Weld** (Unite) / **Clip** (Intersect) / **Subtract** / **Exclude** (XOR) — closed paths. **First selected = subject**; later shapes are operators (e.g. Subtract = subject − rest; Clip keeps overlap).
+- **Group** `⌘/Ctrl+G` · **Ungroup** `⌘/Ctrl+Shift+G`. Groups move/scale/rotate together; double-click to edit children (Esc leaves). Saved in `.cutforge` via Paper JSON. Export/send flattens group contents.
 
 ## Shape editing (Corel-like)
 

@@ -303,3 +303,32 @@ export function nodesToSmooth(refs: NodeRef[]): boolean {
 export function nodeKey(ref: NodeRef): string {
   return `${(ref.path as unknown as { id?: number }).id ?? ref.path.data?.cfId ?? 'p'}:${ref.index}`
 }
+
+
+/** Greedy end-to-end join of open paths within maxDist (project units). Mutates list; returns survivor paths. */
+export function joinOpenPathChain(
+  paths: paper.Path[],
+  maxDist: number,
+): { joined: paper.Path[]; mergeCount: number } {
+  const open = paths.filter((p) => !p.closed && p.segments.length >= 2)
+  if (open.length < 2) return { joined: open, mergeCount: 0 }
+  let mergeCount = 0
+  const live = [...open]
+  let changed = true
+  while (changed && live.length > 1) {
+    changed = false
+    outer: for (let i = 0; i < live.length; i++) {
+      for (let j = i + 1; j < live.length; j++) {
+        const a = live[i]
+        const b = live[j]
+        if (joinOpenEndpoints(a, b, maxDist)) {
+          live.splice(j, 1)
+          mergeCount++
+          changed = true
+          break outer
+        }
+      }
+    }
+  }
+  return { joined: live, mergeCount }
+}

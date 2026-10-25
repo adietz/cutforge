@@ -5,7 +5,7 @@ import type { DocStyle, EditorSnapshot, PagePreset, Tool, Unit } from '../types'
 import { INCH_TO_MM, PX_PER_MM } from '../types'
 import { AlignBar } from './AlignBar'
 import { ContextMenu } from './ContextMenu'
-import type { AlignMode, ContextMenuAction } from '../types'
+import type { AlignMode, BooleanOp, ContextMenuAction } from '../types'
 
 const RULER = 22
 
@@ -30,6 +30,11 @@ export function CanvasView({
   onCursor,
   selectedCount,
   objectCount,
+  canBoolean,
+  canUngroup,
+  canJoin,
+  joinTolMm,
+  setJoinTolMm,
 }: {
   page: PagePreset
   tool: Tool
@@ -40,6 +45,11 @@ export function CanvasView({
   onCursor: (c: { xMm: number; yMm: number } | null) => void
   selectedCount: number
   objectCount: number
+  canBoolean: boolean
+  canUngroup: boolean
+  canJoin: boolean
+  joinTolMm: number
+  setJoinTolMm: (mm: number) => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -112,8 +122,20 @@ export function CanvasView({
       <AlignBar
         selectedCount={selectedCount}
         objectCount={objectCount}
+        canBoolean={canBoolean}
+        canUngroup={canUngroup}
+        canJoin={canJoin}
+        joinTolMm={joinTolMm}
         onAlign={(m: AlignMode) => editorRef.current?.align(m)}
         onNest={(mode, opts) => editorRef.current?.nestItems(mode, opts)}
+        onJoin={() => editorRef.current?.joinSelectedOpenPaths()}
+        onBoolean={(op: BooleanOp) => editorRef.current?.booleanSelected(op)}
+        onGroup={() => editorRef.current?.groupSelected()}
+        onUngroup={() => editorRef.current?.ungroupSelected()}
+        onJoinTol={(mm) => {
+          editorRef.current?.setJoinToleranceMm(mm)
+          setJoinTolMm(mm)
+        }}
       />
       <div className="ruler-corner" />
       <canvas ref={hRulerRef} className="ruler ruler-h" height={RULER} />

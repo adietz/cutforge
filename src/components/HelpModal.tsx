@@ -9,7 +9,7 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
         onClick={(e) => e.stopPropagation()}
       >
         <header className="modal-header">
-          <h2>CutForge · v1.7</h2>
+          <h2>CutForge · v1.8</h2>
           <button type="button" className="btn" onClick={onClose}>
             Close
           </button>
@@ -23,6 +23,7 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
                 ['Dblclick segment / node', 'Add node at click / delete node'],
                 ['Shape: C / S', 'Cusp / Smooth selected node'],
                 ['Shift', '15° / square / multi-node'],
+                ['Ctrl/Cmd+G / ⇧G', 'Group / Ungroup'],
                 ['Ctrl/Cmd+A C V D / Z / S / O', 'Edit / Undo / Save / Open'],
                 ['Right-click', 'Context menu on shape / node'],
                 ['Space+drag / Wheel', 'Pan / Zoom'],
@@ -52,8 +53,12 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
             <strong>Shape editing (Corel-like):</strong> Press <kbd>A</kbd> or
             double-click a path. Drag yellow nodes; Shift+click multi-select.
             Double-click a segment to add a node at the click; double-click a
-            node to delete. Right-click for To line / To curve / Break / Join,
-            plus Cut/Copy/Order. Bezier handles appear on selected nodes.
+            node to delete. Bezier handles on selected nodes.
+            <br />
+            <strong>Join / Clip / Group:</strong> Arrange bar or right-click —
+            Join open paths (tol mm); Weld / Clip / Subtract / Exclude on closed
+            paths (<em>first selected = subject</em>). ⌘G Group, ⌘⇧G Ungroup;
+            double-click a group to edit inside (Esc to leave).
             <br />
             <strong>Also:</strong> Nest · materials · K1 frame/jog · Import ·
             Print &amp; Cut.
