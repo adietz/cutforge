@@ -2,12 +2,21 @@ import paper from 'paper'
 import type { CutType, PagePreset } from '../types'
 import { PX_PER_MM } from '../types'
 import type { SilhouettePresets } from './presets'
+import { REG_MARK_INSET_MM, REG_MARK_SIZE_MM } from '../canvas/regMarks'
 
 void paper
 
 const ETX = '\x03'
 /** 1 mm = 20 Silhouette Units */
 const MM_TO_SU = 20
+
+export type RegMarkSeekMode = 'off' | 'auto' | 'manual'
+
+export interface GpglOptions {
+  presets: SilhouettePresets
+  /** Optical registration before cut (Graphtec TB123 / TB23) */
+  regMarkSeek?: RegMarkSeekMode
+}
 
 export interface GpglJob {
   /** Full command stream ready to send (ETX-delimited). */
@@ -16,32 +25,58 @@ export interface GpglJob {
   preview: string
   pathCount: number
   deviceHint: string
+  /** True when stream includes sensor seek commands */
+  includesRegSeek: boolean
 }
 
 /**
  * Build Graphtec GPGL for Silhouette Cameo / Portrait.
- * Coordinate system matches SVG/Inkscape: origin top-left, X right, Y down (mm).
- * CutForge canvas uses the same Y-down layout — no flip needed for GPGL M/D
- * (Graphtec plot uses M y,x / D y,x with carriage/roller swap per inkscape-silhouette).
- *
- * Mapping:
- * - Cut → blade (pressure/speed from cut preset)
- * - Score → lighter blade pressure
- * - Engrave → pen/draw mode (FC0) for sketch fills as outlines
+ * Origin top-left, Y-down (mm). M/D use (y,x) in SU.
  */
 export function generateGpgl(
   items: paper.Item[],
   page: PagePreset,
-  presets: SilhouettePresets,
+  presetsOrOpts: SilhouettePresets | GpglOptions,
 ): GpglJob {
+  const opts: GpglOptions =
+    'presets' in (presetsOrOpts as GpglOptions) &&
+    (presetsOrOpts as GpglOptions).presets
+      ? (presetsOrOpts as GpglOptions)
+      : { presets: presetsOrOpts as SilhouettePresets }
+  const presets = opts.presets
+  const seek = opts.regMarkSeek ?? 'off'
+
   const cmds: string[] = []
   const flat = flattenByType(items)
 
-  // Init sequence (simplified from inkscape-silhouette / robocut)
   cmds.push('\x1b\x04') // ESC EOT initialize
   cmds.push(`FW${presets.media}`)
   cmds.push('FN0')
-  cmds.push('TB50,0') // portrait orientation
+  cmds.push('TB50,0')
+
+  let includesRegSeek = false
+  if (seek !== 'off') {
+    includesRegSeek = true
+    const { regW, regH, originX, originY } = regGeometry(page)
+    cmds.push(';REGMARK SEEK')
+    cmds.push('TB50,0')
+    cmds.push('TB99')
+    cmds.push('TB52,2') // Cameo / Portrait style marks
+    cmds.push('TB51,400')
+    cmds.push('TB53,10')
+    cmds.push('TB55,1')
+    if (seek === 'auto') {
+      // TB123,height,width,top,left — search from origin with small margin
+      const top = Math.max(0, originY - 10)
+      const left = Math.max(0, originX - 10)
+      cmds.push(
+        `TB123,${su(regH)},${su(regW)},${su(top)},${su(left)}`,
+      )
+    } else {
+      cmds.push(`TB23,${su(regH)},${su(regW)}`)
+    }
+  }
+
   cmds.push(`\\0,0`)
   cmds.push(`Z${su(page.heightMm)},${su(page.widthMm)}`)
   cmds.push('L0')
@@ -68,7 +103,6 @@ export function generateGpgl(
         if (pts.length < 2) continue
         pathCount++
         const p0 = toMm(pts[0])
-        // Graphtec: M/D take (y, x) in SU — carriage, roller
         cmds.push(`M${su(p0.y)},${su(p0.x)}`)
         for (let i = 1; i < pts.length; i++) {
           const p = toMm(pts[i])
@@ -81,13 +115,7 @@ export function generateGpgl(
     }
   }
 
-  emitGroup(
-    'CUT',
-    flat.cut,
-    presets.cut.pressure,
-    presets.cut.speed,
-    presets.cut.tool === 'pen',
-  )
+  emitGroup('CUT', flat.cut, presets.cut.pressure, presets.cut.speed, presets.cut.tool === 'pen')
   emitGroup(
     'SCORE',
     flat.score,
@@ -103,12 +131,11 @@ export function generateGpgl(
     presets.engrave.tool === 'pen',
   )
 
-  cmds.push('H') // home
+  cmds.push('H')
 
   const body = cmds
     .filter((c) => !c.startsWith(';'))
     .map((c) => {
-      // Escape sequences (ESC …) are not ETX-terminated
       if (c.charCodeAt(0) === 0x1b) return c
       return c.endsWith(ETX) ? c : c + ETX
     })
@@ -122,12 +149,33 @@ export function generateGpgl(
     bytes: body,
     preview,
     pathCount,
+    includesRegSeek,
     deviceHint:
-      'Cameo 1–5 / Portrait 1–4 (USB VID 0x0b4d). Based on inkscape-silhouette GPGL.',
+      seek === 'off'
+        ? 'Cameo/Portrait USB GPGL. Enable optical seek for print-and-cut.'
+        : seek === 'auto'
+          ? 'Includes TB123 auto reg-mark seek (wait for sensor). Falls back to Studio if seek fails.'
+          : 'Includes TB23 manual reg-mark. Align marks; Studio preferred for finicky sensors.',
   }
 }
 
-function flattenByType(items: paper.Item[]): Record<'cut' | 'score' | 'engrave', paper.Item[]> {
+function regGeometry(page: PagePreset) {
+  const originX = REG_MARK_INSET_MM
+  const originY = REG_MARK_INSET_MM
+  const regW = Math.max(
+    10,
+    page.widthMm - 2 * REG_MARK_INSET_MM - REG_MARK_SIZE_MM,
+  )
+  const regH = Math.max(
+    10,
+    page.heightMm - 2 * REG_MARK_INSET_MM - REG_MARK_SIZE_MM,
+  )
+  return { regW, regH, originX, originY }
+}
+
+function flattenByType(
+  items: paper.Item[],
+): Record<'cut' | 'score' | 'engrave', paper.Item[]> {
   const out: Record<'cut' | 'score' | 'engrave', paper.Item[]> = {
     cut: [],
     score: [],
@@ -138,7 +186,7 @@ function flattenByType(items: paper.Item[]): Record<'cut' | 'score' | 'engrave',
     if (item.data?.isGuide || item.data?.isHandle || item.data?.isPage) return
     if (item.className === 'Path' || item.className === 'CompoundPath') {
       const ct = ((item.data?.cutType as CutType) || 'cut') as CutType
-      if (ct === 'print') return // print layer skipped for cutter
+      if (ct === 'print') return
       out[ct === 'score' || ct === 'engrave' ? ct : 'cut'].push(item)
       return
     }

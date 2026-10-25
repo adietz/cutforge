@@ -1,5 +1,6 @@
 mod serial_grbl;
 mod silhouette_usb;
+mod grbl_tcp;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -18,6 +19,7 @@ pub fn run() {
       serial_grbl::serial_send_gcode,
       silhouette_usb::list_silhouette_devices,
       silhouette_usb::silhouette_send_gpgl,
+      grbl_tcp::grbl_tcp_send,
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {

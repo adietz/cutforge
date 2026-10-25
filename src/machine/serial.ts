@@ -69,3 +69,20 @@ export async function onGrblProgress(
 ): Promise<UnlistenFn> {
   return listen<SendProgress>('grbl-progress', (e) => cb(e.payload))
 }
+
+
+export interface TcpSendResult {
+  host: string
+  port: number
+  linesSent: number
+  message: string
+}
+
+/** Experimental IKIER / GRBL hub Wi‑Fi (often 192.168.4.1:8080). */
+export async function grblTcpSend(
+  host: string,
+  port: number,
+  lines: string[],
+): Promise<TcpSendResult> {
+  return invoke<TcpSendResult>('grbl_tcp_send', { host, port, lines })
+}

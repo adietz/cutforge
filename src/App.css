@@ -791,5 +791,18 @@ kbd {
   border-color: #9b59b6;
 }
 .print-cut-actions {
-  margin: 8px 0 12px;
+  margin: 8px 0 4px;
+  padding: 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent, #3b82f6) 12%, transparent);
+}
+
+.print-cut-steps {
+  margin: 6px 0 8px 1.1rem;
+  padding: 0;
+  list-style: decimal;
+}
+
+.print-cut-steps li {
+  margin: 0.25rem 0;
 }

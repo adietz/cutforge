@@ -24,9 +24,14 @@ import {
   serialIsConnected,
   serialJog,
   serialSendGcode,
+  grblTcpSend,
   type PortInfo,
   type SendProgress,
 } from '../machine/serial'
+import {
+  fileToImageData,
+  rasterImageToGcode,
+} from '../machine/rasterEngrave'
 import { saveTextFile } from '../io/files'
 import type { PagePreset } from '../types'
 import paper from 'paper'
@@ -68,6 +73,13 @@ export function MachinePanel({
   const [progress, setProgress] = useState<SendProgress | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [materialId, setMaterialId] = useState('plywood-3mm')
+  const [rasterDpi, setRasterDpi] = useState(150)
+  const [rasterMinP, setRasterMinP] = useState(80)
+  const [rasterMaxP, setRasterMaxP] = useState(650)
+  const [rasterSpeed, setRasterSpeed] = useState(3000)
+  const [wifiHost, setWifiHost] = useState('192.168.4.1')
+  const [wifiPort, setWifiPort] = useState(8080)
+  const [wifiBusy, setWifiBusy] = useState(false)
 
   const refreshPorts = useCallback(async () => {
     if (!native) return
@@ -199,6 +211,84 @@ export function MachinePanel({
       ...prev,
       [key]: { ...prev[key], [field]: value },
     }))
+  }
+
+
+  const importBitmapEngrave = async () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/png,image/jpeg,image/webp,image/bmp,image/gif'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file) return
+      try {
+        const img = await fileToImageData(file)
+        // Downscale if huge for DPI target width
+        const maxPx = Math.round((page.widthMm * rasterDpi) / 25.4)
+        let data = img
+        if (img.width > maxPx && maxPx > 32) {
+          const scale = maxPx / img.width
+          const c = document.createElement('canvas')
+          c.width = Math.max(1, Math.round(img.width * scale))
+          c.height = Math.max(1, Math.round(img.height * scale))
+          const ctx = c.getContext('2d')!
+          const tmp = document.createElement('canvas')
+          tmp.width = img.width
+          tmp.height = img.height
+          tmp.getContext('2d')!.putImageData(img, 0, 0)
+          ctx.drawImage(tmp, 0, 0, c.width, c.height)
+          data = ctx.getImageData(0, 0, c.width, c.height)
+        }
+        const g = rasterImageToGcode(data, {
+          dpi: rasterDpi,
+          minPower: rasterMinP,
+          maxPower: rasterMaxP,
+          speed: rasterSpeed,
+          travel: presets.travel,
+          page,
+        })
+        setPreview(g)
+        setErr(null)
+        onStatus(
+          `Bitmap engrave: ${data.width}×${data.height} @ ${rasterDpi} dpi — Send to K1 or Save .nc`,
+        )
+      } catch (e) {
+        setErr(String(e))
+      }
+    }
+    input.click()
+  }
+
+  const sendWifi = async () => {
+    if (!native) {
+      setErr('Wi‑Fi send requires the CutForge desktop app')
+      return
+    }
+    const lines = gcodeToLines(preview)
+    if (!lines.length) {
+      setErr('Nothing to send — refresh G-code or import a bitmap')
+      return
+    }
+    if (
+      !window.confirm(
+        `Experimental Wi‑Fi send to ${wifiHost}:${wifiPort}?\n` +
+          `${lines.length} lines. Join the laser AP first (often 192.168.4.1).\n` +
+          `USB serial is still the reliable path. Cancel if unsure.`,
+      )
+    ) {
+      return
+    }
+    setWifiBusy(true)
+    setErr(null)
+    try {
+      const r = await grblTcpSend(wifiHost, wifiPort, lines)
+      onStatus(r.message)
+    } catch (e) {
+      setErr(String(e))
+      onStatus(`Wi‑Fi send failed: ${String(e)}`)
+    } finally {
+      setWifiBusy(false)
+    }
   }
 
   const applyMaterial = (id: string) => {
@@ -427,12 +517,97 @@ export function MachinePanel({
               </div>
             ))}
 
+            <h3 style={{ marginTop: 14 }}>Bitmap engrave</h3>
+            <p className="hint tight">
+              Import a raster → grayscale → bidirectional GRBL scan. Replaces
+              the G-code preview; then Send job (USB) or Wi‑Fi / Save .nc.
+            </p>
+            <div className="preset-row" style={{ flexWrap: 'wrap' }}>
+              <label>
+                DPI
+                <input
+                  type="number"
+                  min={50}
+                  max={300}
+                  value={rasterDpi}
+                  onChange={(e) => setRasterDpi(+e.target.value)}
+                />
+              </label>
+              <label>
+                Min S
+                <input
+                  type="number"
+                  value={rasterMinP}
+                  onChange={(e) => setRasterMinP(+e.target.value)}
+                />
+              </label>
+              <label>
+                Max S
+                <input
+                  type="number"
+                  value={rasterMaxP}
+                  onChange={(e) => setRasterMaxP(+e.target.value)}
+                />
+              </label>
+              <label>
+                Speed
+                <input
+                  type="number"
+                  value={rasterSpeed}
+                  onChange={(e) => setRasterSpeed(+e.target.value)}
+                />
+              </label>
+            </div>
+            <button
+              type="button"
+              className="btn"
+              style={{ marginTop: 6 }}
+              onClick={() => void importBitmapEngrave()}
+            >
+              Import raster → engrave G-code
+            </button>
+
+            <h3 style={{ marginTop: 14 }}>Wi‑Fi (experimental)</h3>
+            <p className="hint tight">
+              IKIER-class hubs often expose GRBL on TCP{' '}
+              <code>192.168.4.1:8080</code> after joining the laser AP. Prefer
+              USB. If Wi‑Fi fails, save .nc to a TF/SD card.
+            </p>
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <label className="field" style={{ flex: 1, minWidth: 120 }}>
+                <span>Host</span>
+                <input
+                  value={wifiHost}
+                  onChange={(e) => setWifiHost(e.target.value)}
+                  disabled={!native}
+                />
+              </label>
+              <label className="field" style={{ width: 90 }}>
+                <span>Port</span>
+                <input
+                  type="number"
+                  value={wifiPort}
+                  onChange={(e) => setWifiPort(+e.target.value)}
+                  disabled={!native}
+                />
+              </label>
+            </div>
+            <button
+              type="button"
+              className="btn"
+              style={{ marginTop: 6 }}
+              disabled={!native || wifiBusy || sending}
+              onClick={() => void sendWifi()}
+            >
+              {wifiBusy ? 'Wi‑Fi sending…' : 'Send via Wi‑Fi (TCP)'}
+            </button>
+
             <div className="row" style={{ gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
               <button type="button" className="btn" onClick={rebuildPreview}>
                 Refresh G-code
               </button>
               <button type="button" className="btn" onClick={() => void saveGcode()}>
-                Save .nc (dry-run)
+                Save .nc (dry-run / TF)
               </button>
               <button
                 type="button"
@@ -440,7 +615,7 @@ export function MachinePanel({
                 disabled={!native || !connected || sending}
                 onClick={() => void sendJob()}
               >
-                {sending ? 'Sending…' : 'Send job'}
+                {sending ? 'Sending…' : 'Send to K1 (USB)'}
               </button>
               <button
                 type="button"
@@ -465,9 +640,9 @@ export function MachinePanel({
             )}
             {err && <p className="hint danger-text">{err}</p>}
             <p className="hint tight">
-              USB Type-C → serial (usually 115200). Linux: add user to{' '}
-              <code>dialout</code>. macOS: allow USB accessories. Windows: CH340/CP210
-              drivers if needed. No Wi‑Fi send in v0.7.
+              USB Type-C → serial (usually 115200) is primary. Wi‑Fi TCP is
+              experimental (hub AP → host:8080). Linux: <code>dialout</code>.
+              Fallback: Save .nc → TF/SD on the controller.
             </p>
           </div>
           <div className="machine-panel-right">

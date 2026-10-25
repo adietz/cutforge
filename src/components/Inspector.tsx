@@ -173,26 +173,36 @@ export function Inspector({
       </label>
       {printAndCut && (
         <div className="print-cut-actions">
-          <p className="hint tight">
-            Mark artwork as <strong>print</strong> (inkjet). Knife paths stay
-            Cut/Score. Export print sheet, then cut with marks.
-          </p>
+          <ol className="hint tight print-cut-steps">
+            <li>
+              Style inkjet art as <strong>print</strong>; knife as{' '}
+              <strong>Cut</strong> / <strong>Score</strong>.
+            </li>
+            <li>
+              <strong>1 · Print</strong> — PNG or PDF (marks included) → inkjet.
+            </li>
+            <li>
+              <strong>2 · Cut</strong> — Cut SVG (Studio sensor) or Send to
+              Silhouette with optical seek.
+            </li>
+          </ol>
           <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
-            <button type="button" className="btn" onClick={onExportPrintPng}>
-              Print PNG
+            <button type="button" className="btn primary" onClick={onExportPrintPng}>
+              1 · Print PNG
             </button>
             <button type="button" className="btn" onClick={onExportPrintPdf}>
               Print PDF
             </button>
             <button type="button" className="btn" onClick={onExportCutSvg}>
-              Cut SVG
+              2 · Cut SVG
             </button>
           </div>
         </div>
       )}
 
       <p className="hint tight">
-        Four corner marks for Cameo print-and-cut; included in SVG export.
+        Four corner marks (Cameo-style). Included in print sheets and SVG.
+        Optical seek: Send to Silhouette → auto TB123, or Studio via Cut SVG.
       </p>
 
       <h2>Snap</h2>

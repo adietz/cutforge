@@ -13,4 +13,5 @@ commands.allow = [
   "serial_send_gcode",
   "list_silhouette_devices",
   "silhouette_send_gpgl",
+  "grbl_tcp_send",
 ]

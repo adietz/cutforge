@@ -169,10 +169,15 @@ fn read_status(handle: &DeviceHandle<Context>) -> Result<String, String> {
 }
 
 /// Send a GPGL command stream (already ETX-delimited ASCII).
+/// When `wait_regmark` is true, allow up to ~40s for optical seek (TB123/TB23).
 #[tauri::command]
-pub fn silhouette_send_gpgl(vendor_id: u16, product_id: u16, data: String) -> Result<String, String> {
+pub fn silhouette_send_gpgl(
+    vendor_id: u16,
+    product_id: u16,
+    data: String,
+    wait_regmark: Option<bool>,
+) -> Result<String, String> {
     let handle = open_device(vendor_id, product_id)?;
-    // Initialize
     let _ = handle.write_bulk(
         find_bulk_out(&handle).unwrap_or(0x01),
         &[0x1b, 0x04],
@@ -181,21 +186,34 @@ pub fn silhouette_send_gpgl(vendor_id: u16, product_id: u16, data: String) -> Re
     std::thread::sleep(Duration::from_millis(200));
     let _ = read_status(&handle);
 
+    let seeking = wait_regmark.unwrap_or(false)
+        || data.contains("TB123")
+        || data.contains("TB23");
+
     write_all(&handle, data.as_bytes())?;
 
-    // Soft wait
-    for _ in 0..40 {
-        let st = read_status(&handle).unwrap_or_default();
-        if st.contains('0') {
+    // Longer poll when optical registration may be running
+    let polls = if seeking { 160 } else { 40 }; // ~40s vs ~10s
+    let mut last = String::new();
+    for _ in 0..polls {
+        last = read_status(&handle).unwrap_or_default();
+        if last.contains('0') {
             break;
         }
+        // Moving / unloaded while seeking
         std::thread::sleep(Duration::from_millis(250));
     }
 
     let _ = handle.release_interface(0);
+    let note = if seeking {
+        format!(" (reg-mark seek; last status {:?})", last.trim())
+    } else {
+        String::new()
+    };
     Ok(format!(
-        "Sent {} bytes to {}",
+        "Sent {} bytes to {}{}",
         data.len(),
-        known_name(vendor_id, product_id)
+        known_name(vendor_id, product_id),
+        note
     ))
 }

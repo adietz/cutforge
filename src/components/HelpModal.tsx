@@ -9,7 +9,7 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
         onClick={(e) => e.stopPropagation()}
       >
         <header className="modal-header">
-          <h2>CutForge · v1.0</h2>
+          <h2>CutForge · v1.1</h2>
           <button type="button" className="btn" onClick={onClose}>
             Close
           </button>
@@ -34,13 +34,12 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
             </tbody>
           </table>
           <p className="hint">
-            <strong>Print &amp; Cut:</strong> inspector → Print &amp; Cut mode +
-            style artwork as <em>print</em>, knife as Cut/Score. Export Print
-            PNG/PDF, then Cut SVG or Send to Silhouette (print skipped). Full
-            optical registration: hand off Cut SVG to Silhouette Studio.
+            <strong>Print &amp; Cut:</strong> inspector steps → Print PNG/PDF,
+            then Cut SVG or Send to Silhouette with optical seek (TB123). Studio
+            remains the fallback if the sensor fails.
             <br />
-            <strong>Also:</strong> parallel kerf · material presets · job
-            estimate · color→power · Send to K1 (M5 on cancel).
+            <strong>K1:</strong> USB G-code · bitmap raster engrave · experimental
+            Wi‑Fi TCP (hub AP :8080) · materials · kerf · job estimate.
           </p>
         </div>
       </div>

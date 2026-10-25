@@ -4,7 +4,7 @@ import {
   DEFAULT_SILHOUETTE_PRESETS,
   type SilhouettePresets,
 } from '../machine/presets'
-import { generateGpgl } from '../machine/gpgl'
+import { generateGpgl, type RegMarkSeekMode } from '../machine/gpgl'
 import {
   listSilhouetteDevices,
   silhouetteSendGpgl,
@@ -30,6 +30,7 @@ export function SilhouettePanel({
   onStatus: (s: string) => void
 }) {
   const [printThenCut, setPrintThenCut] = useState(true)
+  const [regMarkSeek, setRegMarkSeek] = useState<RegMarkSeekMode>('auto')
   const native = silhouetteUsbAvailable()
   const [devices, setDevices] = useState<SilhouetteDeviceInfo[]>([])
   const [selected, setSelected] = useState('')
@@ -58,16 +59,24 @@ export function SilhouettePanel({
     }
   }, [native, selected])
 
+  const gpglOpts = useCallback(
+    () => ({
+      presets,
+      regMarkSeek: printThenCut ? regMarkSeek : ('off' as RegMarkSeekMode),
+    }),
+    [presets, printThenCut, regMarkSeek],
+  )
+
   const rebuild = useCallback(() => {
     try {
-      const job = generateGpgl(getItems(), page, presets)
+      const job = generateGpgl(getItems(), page, gpglOpts())
       setPreview(job.preview)
       setPathCount(job.pathCount)
       setErr(null)
     } catch (e) {
       setErr(String(e))
     }
-  }, [getItems, page, presets])
+  }, [getItems, page, gpglOpts])
 
   useEffect(() => {
     if (!open) return
@@ -78,7 +87,7 @@ export function SilhouettePanel({
   if (!open) return null
 
   const send = async () => {
-    const job = generateGpgl(getItems(), page, presets)
+    const job = generateGpgl(getItems(), page, gpglOpts())
     if (!job.pathCount) {
       setErr('No cut/score/engrave paths to send')
       return
@@ -92,12 +101,16 @@ export function SilhouettePanel({
       setErr('Select a Silhouette USB device')
       return
     }
+    const seekNote = job.includesRegSeek
+      ? `Optical seek (${regMarkSeek}): keep marks visible; wait up to ~40s. If seek fails, open Cut SVG in Silhouette Studio.\n`
+      : ''
     if (
       !window.confirm(
         `Send ${job.pathCount} path(s) to the Silhouette?\n\n` +
           (printThenCut
             ? 'Print-then-cut: confirm the inkjet print is loaded and marks are visible.\n'
             : '') +
+          seekNote +
           `Load media on the mat first. CutForge uses open GPGL over USB (inkscape-silhouette compatible).`,
       )
     ) {
@@ -106,8 +119,19 @@ export function SilhouettePanel({
     setBusy(true)
     setErr(null)
     try {
-      const msg = await silhouetteSendGpgl(vs, ps, job.bytes)
+      const msg = await silhouetteSendGpgl(
+        vs,
+        ps,
+        job.bytes,
+        job.includesRegSeek,
+      )
       onStatus(msg)
+      if (job.includesRegSeek) {
+        onStatus(
+          msg +
+            ' — If marks were not found, use Cut SVG → Silhouette Studio for sensor registration.',
+        )
+      }
     } catch (e) {
       setErr(String(e))
       onStatus(`Silhouette send failed: ${String(e)}`)
@@ -117,7 +141,7 @@ export function SilhouettePanel({
   }
 
   const saveDump = async () => {
-    const job = generateGpgl(getItems(), page, presets)
+    const job = generateGpgl(getItems(), page, gpglOpts())
     const result = await saveTextFile('gcode', 'cutforge-silhouette.gpgl', job.bytes)
     if (result) onStatus(`Saved ${result.name}`)
   }
@@ -230,15 +254,41 @@ export function SilhouettePanel({
               Print-then-cut workflow
             </label>
             {printThenCut && (
-              <p className="hint tight">
-                1) In the inspector enable <strong>Print &amp; Cut mode</strong>,
-                mark artwork as <strong>print</strong>, export Print PNG/PDF and
-                inkjet it. 2) Load the print on the mat with registration marks
-                visible. 3) Send cut GPGL from here (print objects are skipped).
-                Sensor/reg-mark seek is limited in CutForge — for full optical
-                registration use Silhouette Studio with the Cut SVG, or ensure
-                marks align manually.
-              </p>
+              <>
+                <label className="field" style={{ marginTop: 8 }}>
+                  <span>Optical / sensor reg-mark seek</span>
+                  <select
+                    value={regMarkSeek}
+                    onChange={(e) =>
+                      setRegMarkSeek(e.target.value as RegMarkSeekMode)
+                    }
+                  >
+                    <option value="auto">Auto (TB123 USB seek)</option>
+                    <option value="manual">Manual (TB23)</option>
+                    <option value="off">Off (align by eye)</option>
+                  </select>
+                </label>
+                <ol className="hint tight print-cut-steps">
+                  <li>
+                    Inspector → <strong>Print &amp; Cut mode</strong>; style
+                    artwork as <strong>print</strong>, knife as Cut/Score.
+                  </li>
+                  <li>
+                    Export <strong>Print PNG/PDF</strong>, inkjet it (marks
+                    included).
+                  </li>
+                  <li>
+                    Load print on the mat with marks visible; send cut GPGL
+                    here (print objects skipped).
+                  </li>
+                  <li>
+                    If sensor seek fails or firmware rejects TB123: export{' '}
+                    <strong>Cut SVG</strong> → open in{' '}
+                    <strong>Silhouette Studio</strong> for full optical
+                    registration.
+                  </li>
+                </ol>
+              </>
             )}
 
             <div className="row" style={{ gap: 8, marginTop: 12, flexWrap: 'wrap' }}>

@@ -21,6 +21,12 @@ export async function silhouetteSendGpgl(
   vendorId: number,
   productId: number,
   data: string,
+  waitRegmark = false,
 ): Promise<string> {
-  return invoke('silhouette_send_gpgl', { vendorId, productId, data })
+  return invoke('silhouette_send_gpgl', {
+    vendorId,
+    productId,
+    data,
+    waitRegmark,
+  })
 }
