@@ -78,6 +78,8 @@ export interface EditorSnapshot {
   dirty: boolean
   regMarks: boolean
   tool: Tool
+  objectCount: number
+  canBoolean: boolean
 }
 
 export const INCH_TO_MM = 25.4

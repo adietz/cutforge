@@ -59,10 +59,10 @@ export class CutForgeEditor {
   private tool: Tool = 'select'
   private style: DocStyle = {
     strokeColor: '#e74c3c',
-    strokeWidthMm: 0.2,
+    strokeWidthMm: HAIRLINE_MM,
     fillColor: null,
     cutType: 'cut',
-    hairline: false,
+    hairline: true,
   }
   private page: PagePreset
   private paperTool: paper.Tool
@@ -106,6 +106,10 @@ export class CutForgeEditor {
   private fileName: string | null = null
   private dirty = false
   private moveBoundsStart: paper.Rectangle | null = null
+  private movePointerStart: paper.Point | null = null
+  private moveOrigPositions: { item: paper.Item; position: paper.Point }[] = []
+  private didTransform = false
+  private cursorListeners: ((c: CursorInfo | null) => void)[] = []
   private regMarksEnabled = false
   private regMarksGroup: paper.Group | null = null
   private rotateBaseDeg = 0
@@ -144,6 +148,15 @@ export class CutForgeEditor {
     }
   }
 
+  /** Lightweight cursor updates — does not rebuild layers in React. */
+  onCursor(fn: (c: CursorInfo | null) => void) {
+    this.cursorListeners.push(fn)
+    fn(this.cursor)
+    return () => {
+      this.cursorListeners = this.cursorListeners.filter((f) => f !== fn)
+    }
+  }
+
   destroy() {
     this.canvas.removeEventListener('wheel', this.onWheel)
     this.canvas.removeEventListener('dblclick', this.onDblClick)
@@ -167,6 +180,21 @@ export class CutForgeEditor {
 
   getDocItems(): paper.Item[] {
     return [...this.docLayer.children]
+  }
+
+  getObjectCount() {
+    return this.docLayer.children.length
+  }
+
+  /** True if selection has ≥2 closed paths suitable for boolean ops. */
+  canBoolean(): boolean {
+    const items = this.selected.filter((i) => !i.data.locked && i.visible)
+    if (items.length < 2) return false
+    return items.every(
+      (i) =>
+        (i instanceof paper.Path && i.closed) ||
+        i instanceof paper.CompoundPath,
+    )
   }
 
   /** Document objects plus registration marks when enabled (for export). */
@@ -440,15 +468,23 @@ export class CutForgeEditor {
     return 8 / paper.view.zoom
   }
 
-  private applySnap(pt: paper.Point, excludeIds: string[] = []): paper.Point {
+  private applySnap(
+    pt: paper.Point,
+    excludeIds: string[] = [],
+    opts?: { skipEdges?: boolean },
+  ): paper.Point {
+    const settings = opts?.skipEdges
+      ? { ...this.snapSettings, edges: false, smartGuides: false }
+      : this.snapSettings
     const r = snapPoint(
       pt,
-      this.snapSettings,
+      settings,
       this.docLayer.children,
       excludeIds,
       this.snapTol(),
     )
-    this.drawSmartGuides(r.guideX, r.guideY)
+    if (!opts?.skipEdges) this.drawSmartGuides(r.guideX, r.guideY)
+    else this.clearSmartGuides()
     return r.point
   }
 
@@ -533,10 +569,18 @@ export class CutForgeEditor {
   }
 
   setPage(page: PagePreset) {
+    const prev = this.page
+    const idChanged = prev.id !== page.id
+    const sizeChanged =
+      Math.abs(prev.widthMm - page.widthMm) > 0.05 ||
+      Math.abs(prev.heightMm - page.heightMm) > 0.05
     this.page = page
     this.rebuildPage()
     this.rebuildRegMarks()
-    this.fitPage()
+    // Only auto-fit when switching presets, not every custom W/H keystroke
+    if (idChanged && sizeChanged) this.fitPage()
+    else this.drawHandles()
+    this.dirty = true
     this.notify()
   }
 
@@ -642,7 +686,8 @@ export class CutForgeEditor {
       this.history.pushBefore(before)
       this.dirty = true
       this.selectItems([item])
-      this.status = 'SVG imported'
+      this.status = 'SVG imported — check Layers'
+      this.notify()
     } catch (err) {
       this.status = `Import error: ${String(err)}`
       this.notify()
@@ -849,6 +894,8 @@ export class CutForgeEditor {
       dirty: this.dirty,
       regMarks: this.regMarksEnabled,
       tool: this.tool,
+      objectCount: this.docLayer.children.length,
+      canBoolean: this.canBoolean(),
     }
   }
 
@@ -1059,7 +1106,7 @@ export class CutForgeEditor {
     while (item && item.parent && item.parent !== this.docLayer) {
       item = item.parent
     }
-    if (!item || isGuide(item) || !item.visible) return null
+    if (!item || isGuide(item) || !item.visible || item.data.locked) return null
     return item
   }
 
@@ -1109,6 +1156,7 @@ export class CutForgeEditor {
       const h = String(handleHit.item.data.handle)
       if (h === 'rotate') {
         this.mode = 'rotate'
+        this.didTransform = false
         this.transformOrigin = this.selectedBounds()?.center ?? e.point
         this.startRotation = Math.atan2(
           e.point.y - this.transformOrigin.y,
@@ -1117,6 +1165,7 @@ export class CutForgeEditor {
         this.rotateBaseDeg = (this.startRotation * 180) / Math.PI
       } else {
         this.mode = 'resize'
+        this.didTransform = false
         this.resizeCorner = h
         this.startBounds = this.selectedBounds()
         this.dragStart = e.point.clone()
@@ -1132,7 +1181,7 @@ export class CutForgeEditor {
     const item = this.hitDrawable(e.point)
     if (item) {
       if (item.data.locked) {
-        this.status = 'Layer locked'
+        this.status = 'Locked — unlock in Layers to edit'
         this.notify()
         return
       }
@@ -1140,13 +1189,21 @@ export class CutForgeEditor {
         if (this.selected.includes(item))
           this.selectItems(this.selected.filter((i) => i !== item))
         else this.selectItems([...this.selected, item])
-      } else if (!this.selected.includes(item)) {
+        return // Shift+click toggles only; no drag
+      }
+      if (!this.selected.includes(item)) {
         this.selectItems([item])
       }
       this.gestureBefore = this.snapshotDoc()
       this.mode = 'move'
+      this.didTransform = false
+      this.movePointerStart = e.point.clone()
       this.dragStart = e.point.clone()
       this.moveBoundsStart = this.selectedBounds()
+      this.moveOrigPositions = this.selected.map((it) => ({
+        item: it,
+        position: it.position.clone(),
+      }))
     } else {
       // start marquee
       if (!e.modifiers.shift) this.deselectAll()
@@ -1182,8 +1239,8 @@ export class CutForgeEditor {
       this.docLayer.activate()
       return
     }
-    if (this.mode === 'move' && this.dragStart) {
-      let delta = e.point.subtract(this.dragStart)
+    if (this.mode === 'move' && this.movePointerStart) {
+      let delta = e.point.subtract(this.movePointerStart)
       if (this.moveBoundsStart) {
         const exclude = this.selected.map((s) => String(s.data.cfId))
         const sd = snapDelta(
@@ -1197,13 +1254,10 @@ export class CutForgeEditor {
         delta = sd.point
         this.drawSmartGuides(sd.guideX, sd.guideY)
       }
-      for (const item of this.selected) {
-        if (!item.data.locked) item.position = item.position.add(delta)
+      for (const o of this.moveOrigPositions) {
+        if (!o.item.data.locked) o.item.position = o.position.add(delta)
       }
-      this.dragStart = e.point.clone()
-      if (this.moveBoundsStart) {
-        this.moveBoundsStart = this.selectedBounds()
-      }
+      if (delta.length > 0.5) this.didTransform = true
       this.drawHandles()
     } else if (this.mode === 'rotate' && this.transformOrigin) {
       let ang = Math.atan2(
@@ -1221,11 +1275,13 @@ export class CutForgeEditor {
       }
       this.rotateBaseDeg = absDeg
       this.startRotation = ang
+      this.didTransform = true
       this.drawHandles()
     } else if (this.mode === 'resize' && this.startBounds && this.resizeCorner) {
       const exclude = this.selected.map((s) => String(s.data.cfId))
       const pt = this.applySnap(e.point, exclude)
       this.applyResize(pt)
+      this.didTransform = true
       this.drawHandles()
     }
   }
@@ -1288,12 +1344,17 @@ export class CutForgeEditor {
         this.mode === 'rotate') &&
       this.gestureBefore
     ) {
-      this.history.pushBefore(this.gestureBefore)
+      if (this.didTransform) {
+        this.history.pushBefore(this.gestureBefore)
+        this.dirty = true
+      }
       this.gestureBefore = null
-      this.dirty = true
     }
     this.clearSmartGuides()
     this.moveBoundsStart = null
+    this.movePointerStart = null
+    this.moveOrigPositions = []
+    this.didTransform = false
     this.mode = 'none'
     this.dragStart = null
     this.origScalings = []
@@ -1301,7 +1362,8 @@ export class CutForgeEditor {
   }
 
   private onDrawDown(e: paper.ToolEvent) {
-    const pt = this.applySnap(e.point)
+    const skipEdges = this.tool === 'freehand'
+    const pt = this.applySnap(e.point, [], { skipEdges })
     this.dragStart = pt.clone()
     this.mode = 'draw'
     this.docLayer.activate()
@@ -1351,7 +1413,8 @@ export class CutForgeEditor {
   private onDrawDrag(e: paper.ToolEvent) {
     if (!this.dragStart) return
     this.docLayer.activate()
-    let pt = this.applySnap(e.point)
+    const skipEdges = this.tool === 'freehand'
+    let pt = this.applySnap(e.point, [], { skipEdges })
     if (this.tool === 'freehand' && this.currentPath) {
       this.currentPath.add(pt)
       return
@@ -1394,7 +1457,7 @@ export class CutForgeEditor {
 
   private onDrawUp(_e: paper.ToolEvent) {
     if (this.tool === 'freehand' && this.currentPath) {
-      if (this.currentPath.segments.length > 2) this.currentPath.simplify(1.5)
+      if (this.currentPath.segments.length > 2) this.currentPath.simplify(2.5)
       if (this.currentPath.segments.length >= 2) {
         if (this.gestureBefore) this.history.pushBefore(this.gestureBefore)
         this.dirty = true
@@ -1404,7 +1467,6 @@ export class CutForgeEditor {
       }
       this.currentPath = null
       this.gestureBefore = null
-      this.dirty = true
       this.setTool('select')
     } else if (
       this.preview &&
@@ -1458,11 +1520,10 @@ export class CutForgeEditor {
       xView: e.offsetX,
       yView: e.offsetY,
     }
-    // lightweight notify for cursor — throttle via rAF
     if (!this._cursorRaf) {
       this._cursorRaf = requestAnimationFrame(() => {
         this._cursorRaf = 0
-        this.notify()
+        for (const fn of this.cursorListeners) fn(this.cursor)
       })
     }
   }

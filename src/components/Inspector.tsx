@@ -38,6 +38,7 @@ export function Inspector({
   onOffset,
   regMarks,
   onRegMarks,
+  canBoolean,
 }: {
   unit: Unit
   page: PagePreset
@@ -64,6 +65,7 @@ export function Inspector({
   onOffset: (offsetMm: number) => void
   regMarks: boolean
   onRegMarks: (enabled: boolean) => void
+  canBoolean: boolean
 }) {
   const toDisplay = (mm: number) =>
     unit === 'in' ? +(mm / INCH_TO_MM).toFixed(3) : +mm.toFixed(2)
@@ -271,7 +273,12 @@ export function Inspector({
         <button
           type="button"
           className="btn"
-          disabled={selectedCount < 2}
+          disabled={!canBoolean}
+          title={
+            canBoolean
+              ? 'Unite selected closed paths'
+              : 'Select 2+ closed paths (rect, ellipse, closed polygon)'
+          }
           onClick={() => onBoolean('unite')}
         >
           Unite
@@ -279,7 +286,12 @@ export function Inspector({
         <button
           type="button"
           className="btn"
-          disabled={selectedCount < 2}
+          disabled={!canBoolean}
+          title={
+            canBoolean
+              ? 'Subtract others from first selected'
+              : 'Select 2+ closed paths'
+          }
           onClick={() => onBoolean('subtract')}
         >
           Subtract
@@ -287,7 +299,12 @@ export function Inspector({
         <button
           type="button"
           className="btn"
-          disabled={selectedCount < 2}
+          disabled={!canBoolean}
+          title={
+            canBoolean
+              ? 'Intersect selected closed paths'
+              : 'Select 2+ closed paths'
+          }
           onClick={() => onBoolean('intersect')}
         >
           Intersect

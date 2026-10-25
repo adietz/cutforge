@@ -22,7 +22,7 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
                 ['V R E L P F T', 'Tools'],
                 ['Shift (line / polygon / rotate)', 'Snap to 15° increments'],
                 ['Shift (rect / ellipse)', 'Square / circle'],
-                ['Drag empty / Shift+click', 'Marquee / toggle select'],
+                ['Drag empty / Shift+click', 'Marquee / toggle (Shift does not drag)'],
                 ['Ctrl/Cmd+A C V D', 'Select all / Copy / Paste / Duplicate'],
                 ['Ctrl/Cmd+Z / Shift+Z / Y', 'Undo / Redo'],
                 ['Ctrl/Cmd+S / Shift+S / O', 'Save / Save As / Open'],

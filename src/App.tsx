@@ -37,10 +37,10 @@ export default function App() {
   const [page, setPage] = useState<PagePreset>(PAGE_PRESETS[2])
   const [style, setStyle] = useState<DocStyle>({
     strokeColor: '#e74c3c',
-    strokeWidthMm: 0.2,
+    strokeWidthMm: HAIRLINE_MM,
     fillColor: null,
     cutType: 'cut',
-    hairline: false,
+    hairline: true,
   })
   const [snap, setSnap] = useState<SnapSettings>({ ...DEFAULT_SNAP })
   const [selectedCount, setSelectedCount] = useState(0)
@@ -51,11 +51,13 @@ export default function App() {
   const [layers, setLayers] = useState<LayerInfo[]>([])
   const [cursorLabel, setCursorLabel] = useState('—')
   const [helpOpen, setHelpOpen] = useState(false)
-  const [hairlineExport, setHairlineExport] = useState(false)
+  const [hairlineExport, setHairlineExport] = useState(true)
   const [fileLabel, setFileLabel] = useState('Untitled.cutforge')
   const [recoveryOpen, setRecoveryOpen] = useState(false)
   const [recoveryLabel, setRecoveryLabel] = useState('')
   const [regMarks, setRegMarks] = useState(false)
+  const [objectCount, setObjectCount] = useState(0)
+  const [canBoolean, setCanBoolean] = useState(false)
   const recoveryJson = useRef<string | null>(null)
 
   const onUpdate = useCallback(
@@ -69,6 +71,8 @@ export default function App() {
       setSnap(info.snap)
       setRegMarks(info.regMarks)
       setTool(info.tool)
+      setObjectCount(info.objectCount)
+      setCanBoolean(info.canBoolean)
       setFileLabel(
         (info.fileName || 'Untitled.cutforge') + (info.dirty ? ' •' : ''),
       )
@@ -76,17 +80,23 @@ export default function App() {
         setStyle(info.style)
         if (info.style.hairline) setHairlineExport(true)
       }
-      if (info.cursor) {
-        const x =
-          unit === 'in' ? info.cursor.xMm / INCH_TO_MM : info.cursor.xMm
-        const y =
-          unit === 'in' ? info.cursor.yMm / INCH_TO_MM : info.cursor.yMm
-        setCursorLabel(
-          `X ${x.toFixed(unit === 'in' ? 3 : 2)}  Y ${y.toFixed(
-            unit === 'in' ? 3 : 2,
-          )} ${unit}`,
-        )
+    },
+    [],
+  )
+
+  const onCursor = useCallback(
+    (c: { xMm: number; yMm: number } | null) => {
+      if (!c) {
+        setCursorLabel('—')
+        return
       }
+      const x = unit === 'in' ? c.xMm / INCH_TO_MM : c.xMm
+      const y = unit === 'in' ? c.yMm / INCH_TO_MM : c.yMm
+      setCursorLabel(
+        `X ${x.toFixed(unit === 'in' ? 3 : 2)}  Y ${y.toFixed(
+          unit === 'in' ? 3 : 2,
+        )} ${unit}`,
+      )
     },
     [unit],
   )
@@ -250,9 +260,10 @@ export default function App() {
       page: { ...PAGE_PRESETS[2] },
       style: {
         strokeColor: '#e74c3c',
-        strokeWidthMm: 0.2,
+        strokeWidthMm: HAIRLINE_MM,
         fillColor: null,
         cutType: 'cut',
+        hairline: true,
       },
       snap: { ...DEFAULT_SNAP },
       regMarks: false,
@@ -275,6 +286,10 @@ export default function App() {
   const onExportSvg = async () => {
     const ed = editorRef.current
     if (!ed) return
+    if (ed.getObjectCount() === 0 && !ed.hasRegistrationMarks()) {
+      setStatus('Nothing to export — draw something first')
+      return
+    }
     const svg = exportSvg(ed.getExportItems(), ed.getPage(), unit, {
       hairline: hairlineExport || !!style.hairline,
     })
@@ -291,6 +306,10 @@ export default function App() {
   const onExportDxf = async () => {
     const ed = editorRef.current
     if (!ed) return
+    if (ed.getObjectCount() === 0 && !ed.hasRegistrationMarks()) {
+      setStatus('Nothing to export — draw something first')
+      return
+    }
     const dxf = exportDxf(ed.getExportItems(), ed.getPage(), {
       chordalMm: 0.1,
     })
@@ -344,7 +363,9 @@ export default function App() {
           style={style}
           editorRef={editorRef}
           onUpdate={onUpdate}
+          onCursor={onCursor}
           selectedCount={selectedCount}
+          objectCount={objectCount}
         />
         <Inspector
           unit={unit}
@@ -355,6 +376,7 @@ export default function App() {
           layers={layers}
           snap={snap}
           regMarks={regMarks}
+          canBoolean={canBoolean}
           onUnit={onUnitChange}
           onPage={onPageId}
           onCustomSize={onCustomSize}

@@ -1,4 +1,5 @@
-import { useEffect, useRef, type MutableRefObject } from 'react'
+
+import { useEffect, useRef, useState, type MutableRefObject } from 'react'
 import { CutForgeEditor } from '../canvas/editor'
 import type { DocStyle, EditorSnapshot, PagePreset, Tool, Unit } from '../types'
 import { INCH_TO_MM, PX_PER_MM } from '../types'
@@ -7,6 +8,16 @@ import type { AlignMode } from '../types'
 
 const RULER = 22
 
+const CURSOR: Record<Tool, string> = {
+  select: 'default',
+  rect: 'crosshair',
+  ellipse: 'crosshair',
+  line: 'crosshair',
+  polygon: 'crosshair',
+  freehand: 'crosshair',
+  text: 'text',
+}
+
 export function CanvasView({
   page,
   tool,
@@ -14,7 +25,9 @@ export function CanvasView({
   style: _style,
   editorRef,
   onUpdate,
+  onCursor,
   selectedCount,
+  objectCount,
 }: {
   page: PagePreset
   tool: Tool
@@ -22,12 +35,15 @@ export function CanvasView({
   style: DocStyle
   editorRef: MutableRefObject<CutForgeEditor | null>
   onUpdate: (info: EditorSnapshot) => void
+  onCursor: (c: { xMm: number; yMm: number } | null) => void
   selectedCount: number
+  objectCount: number
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const hRulerRef = useRef<HTMLCanvasElement>(null)
   const vRulerRef = useRef<HTMLCanvasElement>(null)
+  const [ready, setReady] = useState(false)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -40,6 +56,10 @@ export function CanvasView({
       onUpdate(info)
       drawRulers(editor, unit, hRulerRef.current, vRulerRef.current, wrap)
     })
+    const offCursor = editor.onCursor((c) => {
+      onCursor(c)
+    })
+    setReady(true)
 
     const ro = new ResizeObserver(() => {
       const { clientWidth, clientHeight } = wrap
@@ -54,11 +74,12 @@ export function CanvasView({
 
     return () => {
       off()
+      offCursor()
       ro.disconnect()
       editor.destroy()
       editorRef.current = null
+      setReady(false)
     }
-    // mount once
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -74,20 +95,34 @@ export function CanvasView({
     editorRef.current?.setUnit(unit)
     const ed = editorRef.current
     const wrap = wrapRef.current
-    if (ed && wrap) drawRulers(ed, unit, hRulerRef.current, vRulerRef.current, wrap)
+    if (ed && wrap)
+      drawRulers(ed, unit, hRulerRef.current, vRulerRef.current, wrap)
   }, [unit, editorRef])
 
   return (
     <div className="canvas-stage">
       <AlignBar
-        enabled={selectedCount >= 2}
+        selectedCount={selectedCount}
         onAlign={(m: AlignMode) => editorRef.current?.align(m)}
       />
       <div className="ruler-corner" />
       <canvas ref={hRulerRef} className="ruler ruler-h" height={RULER} />
       <canvas ref={vRulerRef} className="ruler ruler-v" width={RULER} />
-      <div className="canvas-wrap" ref={wrapRef}>
+      <div
+        className="canvas-wrap"
+        ref={wrapRef}
+        style={{ cursor: CURSOR[tool] }}
+      >
         <canvas ref={canvasRef} className="design-canvas" />
+        {ready && objectCount === 0 && (
+          <div className="empty-state" aria-hidden>
+            <strong>Empty document</strong>
+            <span>
+              Pick a tool (R rect · E ellipse · L line) or Import SVG.
+              Hold Shift for 15° angles.
+            </span>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -136,7 +171,7 @@ function drawRulers(
         ctx.moveTo(x + 0.5, RULER)
         ctx.lineTo(x + 0.5, RULER - 8)
         ctx.stroke()
-        ctx.fillText(formatTick(u, unit), x + 2, 10)
+        ctx.fillText(formatTick(u), x + 2, 10)
       }
     }
   }
@@ -172,7 +207,7 @@ function drawRulers(
         ctx.save()
         ctx.translate(9, y + 2)
         ctx.rotate(-Math.PI / 2)
-        ctx.fillText(formatTick(u, unit), 0, 0)
+        ctx.fillText(formatTick(u), 0, 0)
         ctx.restore()
       }
     }
@@ -190,7 +225,6 @@ function niceStep(raw: number): number {
   return step * pow
 }
 
-function formatTick(u: number, unit: Unit): string {
-  const v = Math.abs(u) >= 10 ? u.toFixed(0) : u.toFixed(unit === 'in' ? 2 : 1)
-  return `${v}`
+function formatTick(u: number): string {
+  return Math.abs(u) >= 10 ? u.toFixed(0) : u.toFixed(2)
 }
