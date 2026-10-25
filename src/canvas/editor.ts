@@ -216,6 +216,8 @@ export class CutForgeEditor {
   }
 
   destroy() {
+    this.unbindGlobalPointerUp()
+    this.endPointerGesture(true)
     this.canvas.removeEventListener('wheel', this.onWheel)
     this.canvas.removeEventListener('dblclick', this.onDblClick)
     this.canvas.removeEventListener('mousemove', this.onMouseMove)
@@ -869,6 +871,8 @@ export class CutForgeEditor {
 
   setTool(tool: Tool) {
     this.tool = tool
+    // Always end any in-progress pointer gesture when changing tools
+    this.endPointerGesture(true)
     this.clearPreview()
     this.clearMarquee()
     if (tool !== 'polygon') this.polygonPoints = []
@@ -878,7 +882,12 @@ export class CutForgeEditor {
     }
     if (tool === 'shape') {
       this.shapeNodes = []
+    }
+    // Shape + Select both show handles (nodes vs transform box)
+    if (tool === 'shape' || tool === 'select') {
       this.drawHandles()
+    } else {
+      this.clearHandles()
     }
     this.status = this.toolTip(tool)
     this.notify()
@@ -1852,12 +1861,13 @@ export class CutForgeEditor {
   private drawHandles() {
     this.clearHandles()
     if (!this.selected.length) return
-    const z = paper.view.zoom
+    const z = Math.max(0.05, paper.view.zoom || 1)
     this.overlayLayer.activate()
     this.handleGroup = new paper.Group()
     this.handleGroup.data.isHandle = true
 
     const shapeMode = this.tool === 'shape'
+    try {
 
     if (!shapeMode) {
       const bounds = this.selectedBounds()
@@ -1924,7 +1934,7 @@ export class CutForgeEditor {
             )
             // Bezier handles for selected nodes
             if (selected) {
-              if (seg.handleIn.length > 0.5) {
+              if (seg.handleIn && seg.handleIn.length > 0.5) {
                 const hiAbs = seg.point.add(seg.handleIn)
                 const lin = new paper.Path.Line(seg.point, hiAbs)
                 lin.strokeColor = new paper.Color('#aaa')
@@ -1941,7 +1951,7 @@ export class CutForgeEditor {
                 hi.data.vertexPath = path
                 this.handleGroup!.addChild(hi)
               }
-              if (seg.handleOut.length > 0.5) {
+              if (seg.handleOut && seg.handleOut.length > 0.5) {
                 const hoAbs = seg.point.add(seg.handleOut)
                 const lout = new paper.Path.Line(seg.point, hoAbs)
                 lout.strokeColor = new paper.Color('#aaa')
@@ -1972,7 +1982,17 @@ export class CutForgeEditor {
         }
       }
     }
-    this.docLayer.activate()
+    } catch (err) {
+      console.error('drawHandles failed', err)
+      this.clearHandles()
+    } finally {
+      this.docLayer.activate()
+      try {
+        paper.view.update()
+      } catch {
+        /* */
+      }
+    }
   }
 
   private hitDrawable(point: paper.Point): paper.Item | null {
@@ -1996,10 +2016,16 @@ export class CutForgeEditor {
         this.mode = 'pan'
         this.panStart = e.point.clone()
         this.viewCenterStart = paper.view.center.clone()
+        this.bindGlobalPointerUp()
         return
       }
-      if (this.tool === 'select') this.onSelectDown(e)
-      else this.onDrawDown(e)
+      if (this.tool === 'select' || this.tool === 'shape') {
+        this.onSelectDown(e)
+        this.bindGlobalPointerUp()
+      } else {
+        this.onDrawDown(e)
+        this.bindGlobalPointerUp()
+      }
     }
 
     this.paperTool.onMouseDrag = (e: paper.ToolEvent) => {
@@ -2009,19 +2035,80 @@ export class CutForgeEditor {
         this.notify()
         return
       }
-      if (this.tool === 'select') this.onSelectDrag(e)
+      if (this.tool === 'select' || this.tool === 'shape') this.onSelectDrag(e)
       else this.onDrawDrag(e)
     }
 
-    this.paperTool.onMouseUp = (e: paper.ToolEvent) => {
-      if (this.mode === 'pan') {
-        this.mode = 'none'
-        this.panStart = null
-        return
-      }
-      if (this.tool === 'select') this.onSelectUp()
-      else this.onDrawUp(e)
+    this.paperTool.onMouseUp = (_e: paper.ToolEvent) => {
+      this.handlePointerUp()
     }
+  }
+
+  private globalPointerUpBound = false
+
+  private bindGlobalPointerUp() {
+    if (this.globalPointerUpBound) return
+    this.globalPointerUpBound = true
+    window.addEventListener('pointerup', this.onGlobalPointerUp, true)
+    window.addEventListener('mouseup', this.onGlobalPointerUp, true)
+    window.addEventListener('blur', this.onGlobalPointerUp)
+    document.addEventListener('visibilitychange', this.onVisibilityChange)
+  }
+
+  private unbindGlobalPointerUp() {
+    if (!this.globalPointerUpBound) return
+    this.globalPointerUpBound = false
+    window.removeEventListener('pointerup', this.onGlobalPointerUp, true)
+    window.removeEventListener('mouseup', this.onGlobalPointerUp, true)
+    window.removeEventListener('blur', this.onGlobalPointerUp)
+    document.removeEventListener('visibilitychange', this.onVisibilityChange)
+  }
+
+  private onGlobalPointerUp = () => {
+    this.handlePointerUp()
+  }
+
+  private onVisibilityChange = () => {
+    if (document.visibilityState === 'hidden') this.handlePointerUp()
+  }
+
+  /** End marquee / move / draw / pan — safe to call multiple times. */
+  private handlePointerUp() {
+    this.unbindGlobalPointerUp()
+    if (this.mode === 'pan') {
+      this.mode = 'none'
+      this.panStart = null
+      this.viewCenterStart = null
+      return
+    }
+    if (this.tool === 'select' || this.tool === 'shape') {
+      this.onSelectUp()
+    } else if (this.mode === 'draw' || this.dragStart || this.preview || this.currentPath) {
+      // Synthesize draw completion even if Paper missed mouseup off-canvas
+      this.onDrawUp({} as paper.ToolEvent)
+    } else {
+      this.endPointerGesture(false)
+    }
+  }
+
+  private endPointerGesture(clearMarqueePath: boolean) {
+    if (clearMarqueePath) this.clearMarquee()
+    else if (this.mode === 'marquee') this.clearMarquee()
+    this.mode = 'none'
+    this.dragStart = null
+    this.panStart = null
+    this.viewCenterStart = null
+    this.moveBoundsStart = null
+    this.movePointerStart = null
+    this.moveOrigPositions = []
+    this.origScalings = []
+    this.didTransform = false
+    this.gestureBefore = null
+    this.vertexPath = null
+    this.vertexIndex = -1
+    this.handleDragKind = null
+    this.shapeNodeStarts = []
+    this.clearSmartGuides()
   }
 
   private onSelectDown(e: paper.ToolEvent) {
@@ -2327,18 +2414,20 @@ export class CutForgeEditor {
   }
 
   private onSelectUp() {
-    if (this.mode === 'marquee' && this.marquee && this.dragStart) {
-      const rect = this.marquee.bounds
-      const hits = this.docLayer.children.filter(
-        (c) =>
-          c.visible &&
-          !c.data.locked &&
-          !isGuide(c) &&
-          c.bounds.intersects(rect),
-      )
-      if (hits.length) {
-        const merged = [...new Set([...this.selected, ...hits])]
-        this.selectItems(merged)
+    if (this.mode === 'marquee') {
+      if (this.marquee && this.dragStart) {
+        const rect = this.marquee.bounds
+        const hits = this.docLayer.children.filter(
+          (c) =>
+            c.visible &&
+            !c.data.locked &&
+            !isGuide(c) &&
+            c.bounds.intersects(rect),
+        )
+        if (hits.length) {
+          const merged = [...new Set([...this.selected, ...hits])]
+          this.selectItems(merged)
+        }
       }
       this.clearMarquee()
     } else if (
@@ -2354,18 +2443,8 @@ export class CutForgeEditor {
       }
       this.gestureBefore = null
     }
-    this.clearSmartGuides()
-    this.moveBoundsStart = null
-    this.movePointerStart = null
-    this.moveOrigPositions = []
-    this.didTransform = false
-    this.mode = 'none'
-    this.dragStart = null
-    this.origScalings = []
-    this.vertexPath = null
-    this.vertexIndex = -1
-    this.handleDragKind = null
-    this.shapeNodeStarts = []
+    this.endPointerGesture(false)
+    this.drawHandles()
     this.notify()
   }
 
@@ -3172,8 +3251,8 @@ export class CutForgeEditor {
         this.mode === 'marquee'
       this.polygonPoints = []
       this.clearPreview()
-      this.clearMarquee()
-      this.clearSmartGuides()
+      this.endPointerGesture(true)
+      this.unbindGlobalPointerUp()
       if (drawing && this.tool !== 'select' && this.tool !== 'shape') {
         this.setTool('select')
       } else if (this.selected.length) {
