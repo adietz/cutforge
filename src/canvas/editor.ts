@@ -218,7 +218,7 @@ export class CutForgeEditor {
 
     this.pageRect = new paper.Path.Rectangle(new paper.Rectangle(0, 0, w, h))
     this.pageRect.fillColor = new paper.Color('#1a1d24')
-    this.pageRect.strokeColor = new paper.Color('#4a5162')
+    this.pageRect.strokeColor = new paper.Color('#7a849c')
     this.pageRect.strokeWidth = 1
     this.pageRect.data.isPage = true
     this.pageRect.sendToBack()
