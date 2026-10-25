@@ -3,6 +3,11 @@ export function TopBar({
   canUndo,
   canRedo,
   cursorLabel,
+  fileLabel,
+  onNew,
+  onOpen,
+  onSave,
+  onSaveAs,
   onImportSvg,
   onExportSvg,
   onExportDxf,
@@ -14,6 +19,11 @@ export function TopBar({
   canUndo: boolean
   canRedo: boolean
   cursorLabel: string
+  fileLabel: string
+  onNew: () => void
+  onOpen: () => void
+  onSave: () => void
+  onSaveAs: () => void
   onImportSvg: () => void
   onExportSvg: () => void
   onExportDxf: () => void
@@ -26,8 +36,23 @@ export function TopBar({
       <div className="topbar-left">
         <strong className="logo">CutForge</strong>
         <span className="tag">laser · silhouette</span>
+        <span className="file-label" title={fileLabel}>
+          {fileLabel}
+        </span>
       </div>
       <div className="topbar-actions">
+        <button type="button" className="btn" onClick={onNew}>
+          New
+        </button>
+        <button type="button" className="btn" onClick={onOpen}>
+          Open
+        </button>
+        <button type="button" className="btn" onClick={onSave}>
+          Save
+        </button>
+        <button type="button" className="btn" onClick={onSaveAs}>
+          Save As
+        </button>
         <button type="button" className="btn" disabled={!canUndo} onClick={onUndo}>
           Undo
         </button>

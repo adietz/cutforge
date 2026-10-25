@@ -1,17 +1,24 @@
 import paper from 'paper'
 import { applyCutTypeVisual, styleFromItem } from './styles'
 import { HistoryStack } from './history'
+import { snapDelta, snapPoint } from './snap'
+import { booleanOperate, offsetPath } from './booleans'
+import { parseDocument, serializeDocument } from '../project/cutforgeDoc'
+import type { CutForgeDocument } from '../project/cutforgeDoc'
 import type {
   AlignMode,
+  BooleanOp,
   CursorInfo,
   CutType,
   DocStyle,
   EditorSnapshot,
   LayerInfo,
   PagePreset,
+  SnapSettings,
   Tool,
+  Unit,
 } from '../types'
-import { HAIRLINE_MM, PX_PER_MM } from '../types'
+import { DEFAULT_SNAP, HAIRLINE_MM, PX_PER_MM } from '../types'
 
 export type EditorListener = (info: EditorSnapshot) => void
 
@@ -90,6 +97,13 @@ export class CutForgeEditor {
   private gestureBefore: string | null = null
   private cursor: CursorInfo | null = null
   private nameCounters: Record<string, number> = {}
+  private snapSettings: SnapSettings = { ...DEFAULT_SNAP }
+  private smartGuideGroup: paper.Group | null = null
+  private clipboard: string[] = []
+  private unit: Unit = 'in'
+  private fileName: string | null = null
+  private dirty = false
+  private moveBoundsStart: paper.Rectangle | null = null
 
   constructor(canvas: HTMLCanvasElement, page: PagePreset) {
     this.canvas = canvas
@@ -166,8 +180,265 @@ export class CutForgeEditor {
     return paper.view.viewToProject(new paper.Point(x, y))
   }
 
-  setUnit(_unit: 'mm' | 'in') {
+  setUnit(unit: Unit) {
+    this.unit = unit
     this.notify()
+  }
+
+  getUnit(): Unit {
+    return this.unit
+  }
+
+  getSnap(): SnapSettings {
+    return { ...this.snapSettings }
+  }
+
+  setSnap(partial: Partial<SnapSettings>) {
+    this.snapSettings = { ...this.snapSettings, ...partial }
+    this.dirty = true
+    this.notify()
+  }
+
+  getFileName() {
+    return this.fileName
+  }
+
+  setFileName(name: string | null) {
+    this.fileName = name
+    this.notify()
+  }
+
+  isDirty() {
+    return this.dirty
+  }
+
+  markClean() {
+    this.dirty = false
+    this.notify()
+  }
+
+  selectAll() {
+    this.selectItems(
+      this.docLayer.children.filter((c) => c.visible && !c.data.locked),
+    )
+    this.status = `Selected ${this.selected.length}`
+  }
+
+  copySelected() {
+    if (!this.selected.length) return
+    this.clipboard = this.selected.map(
+      (i) => i.exportJSON({ asString: true }) as string,
+    )
+    try {
+      void navigator.clipboard.writeText(
+        JSON.stringify({ cutforgeClipboard: 1, objects: this.clipboard }),
+      )
+    } catch {
+      /* optional */
+    }
+    this.status = `Copied ${this.clipboard.length}`
+    this.notify()
+  }
+
+  async pasteClipboard() {
+    let objects = this.clipboard
+    try {
+      const text = await navigator.clipboard.readText()
+      const parsed = JSON.parse(text) as {
+        cutforgeClipboard?: number
+        objects?: string[]
+      }
+      if (parsed?.cutforgeClipboard && parsed.objects?.length) {
+        objects = parsed.objects
+      }
+    } catch {
+      /* use internal clipboard */
+    }
+    if (!objects.length) {
+      this.status = 'Clipboard empty'
+      this.notify()
+      return
+    }
+    const before = this.snapshotDoc()
+    this.docLayer.activate()
+    const created: paper.Item[] = []
+    for (const s of objects) {
+      const item = paper.project.importJSON(s) as paper.Item | null
+      if (!item) continue
+      if (item.layer !== this.docLayer) this.docLayer.addChild(item)
+      item.position = item.position.add(new paper.Point(12, 12))
+      item.data.cfId = nextId()
+      ensureMeta(item)
+      created.push(item)
+    }
+    this.history.pushBefore(before)
+    this.dirty = true
+    this.selectItems(created)
+    this.status = `Pasted ${created.length}`
+  }
+
+  booleanSelected(op: BooleanOp) {
+    const items = this.selected.filter((i) => !i.data.locked && i.visible)
+    if (items.length < 2) {
+      this.status = 'Select 2+ closed paths'
+      this.notify()
+      return
+    }
+    const before = this.snapshotDoc()
+    const result = booleanOperate(items, op)
+    if (!result) {
+      this.status = 'Boolean failed (need closed paths)'
+      this.notify()
+      return
+    }
+    this.docLayer.activate()
+    this.docLayer.addChild(result)
+    // copy style from first
+    const src = items[0]
+    result.data.cutType = src.data.cutType
+    result.data.strokeWidthMm = src.data.strokeWidthMm
+    result.data.strokeColor = src.data.strokeColor
+    result.data.fillColor = src.data.fillColor
+    result.data.hairline = src.data.hairline
+    applyCutTypeVisual(result, (src.data.cutType as CutType) || 'cut', styleFromItem(src))
+    if (result instanceof paper.Path || result instanceof paper.CompoundPath) {
+      result.strokeWidth = Math.max(
+        ((src.data.strokeWidthMm as number) || 0.2) * PX_PER_MM,
+        0.5,
+      )
+    }
+    ensureMeta(result, `Boolean ${op}`)
+    for (const i of items) i.remove()
+    this.history.pushBefore(before)
+    this.dirty = true
+    this.selectItems([result])
+    this.status = `Boolean ${op}`
+  }
+
+  offsetSelected(offsetMm: number) {
+    const items = this.selected.filter((i) => !i.data.locked && i.visible)
+    if (!items.length) return
+    const before = this.snapshotDoc()
+    const offsetPx = offsetMm * PX_PER_MM
+    const created: paper.Item[] = []
+    this.docLayer.activate()
+    for (const item of items) {
+      const out = offsetPath(item, offsetPx)
+      if (!out) continue
+      this.docLayer.addChild(out)
+      out.data.cutType = item.data.cutType
+      out.data.strokeWidthMm = item.data.strokeWidthMm
+      out.data.strokeColor = item.data.strokeColor
+      out.data.fillColor = item.data.fillColor
+      applyCutTypeVisual(out, (item.data.cutType as CutType) || 'cut', styleFromItem(item))
+      if (out instanceof paper.Path || out instanceof paper.CompoundPath) {
+        out.strokeWidth = Math.max(
+          ((item.data.strokeWidthMm as number) || 0.2) * PX_PER_MM,
+          0.5,
+        )
+      }
+      ensureMeta(out, `${item.data.name || 'Path'} offset`)
+      created.push(out)
+    }
+    if (!created.length) {
+      this.status = 'Offset needs closed paths'
+      this.notify()
+      return
+    }
+    this.history.pushBefore(before)
+    this.dirty = true
+    this.selectItems(created)
+    this.status = `Offset ${offsetMm} mm`
+  }
+
+  toProjectJSON(name = 'Untitled'): string {
+    return serializeDocument({
+      name: this.fileName?.replace(/\.cutforge$/i, '') || name,
+      unit: this.unit,
+      page: this.page,
+      style: this.style,
+      snap: this.snapSettings,
+      objects: this.getDocItems(),
+    })
+  }
+
+  loadProject(doc: CutForgeDocument | string) {
+    const parsed = typeof doc === 'string' ? parseDocument(doc) : doc
+    this.deselectAll()
+    this.clearHandles()
+    this.clearMarquee()
+    this.clearSmartGuides()
+    this.page = { ...parsed.page }
+    this.unit = parsed.unit
+    this.style = { ...parsed.style }
+    this.snapSettings = { ...DEFAULT_SNAP, ...parsed.snap }
+    this.fileName = parsed.name.endsWith('.cutforge')
+      ? parsed.name
+      : `${parsed.name}.cutforge`
+    this.rebuildPage()
+    this.docLayer.removeChildren()
+    this.docLayer.activate()
+    for (const s of parsed.objects) {
+      const item = paper.project.importJSON(s) as paper.Item | null
+      if (!item) continue
+      if (item.layer !== this.docLayer) this.docLayer.addChild(item)
+      ensureMeta(item)
+    }
+    this.history.clear()
+    this.dirty = false
+    this.fitPage()
+    this.status = `Opened ${this.fileName}`
+    this.notify()
+    return parsed
+  }
+
+  private snapTol() {
+    return 8 / paper.view.zoom
+  }
+
+  private applySnap(pt: paper.Point, excludeIds: string[] = []): paper.Point {
+    const r = snapPoint(
+      pt,
+      this.snapSettings,
+      this.docLayer.children,
+      excludeIds,
+      this.snapTol(),
+    )
+    this.drawSmartGuides(r.guideX, r.guideY)
+    return r.point
+  }
+
+  private clearSmartGuides() {
+    this.smartGuideGroup?.remove()
+    this.smartGuideGroup = null
+  }
+
+  private drawSmartGuides(gx: number | null, gy: number | null) {
+    this.clearSmartGuides()
+    if (gx == null && gy == null) return
+    this.overlayLayer.activate()
+    this.smartGuideGroup = new paper.Group()
+    this.smartGuideGroup.data.isHandle = true
+    const w = this.page.widthMm * PX_PER_MM
+    const h = this.page.heightMm * PX_PER_MM
+    const z = paper.view.zoom
+    if (gx != null) {
+      const line = new paper.Path.Line([gx, -h], [gx, h * 2])
+      line.strokeColor = new paper.Color('#ff4fd8')
+      line.strokeWidth = 1 / z
+      line.dashArray = [4 / z, 4 / z]
+      line.data.isHandle = true
+      this.smartGuideGroup.addChild(line)
+    }
+    if (gy != null) {
+      const line = new paper.Path.Line([-w, gy], [w * 2, gy])
+      line.strokeColor = new paper.Color('#ff4fd8')
+      line.strokeWidth = 1 / z
+      line.dashArray = [4 / z, 4 / z]
+      line.data.isHandle = true
+      this.smartGuideGroup.addChild(line)
+    }
+    this.docLayer.activate()
   }
 
   setTool(tool: Tool) {
@@ -200,7 +471,10 @@ export class CutForgeEditor {
       applyCutTypeVisual(item, ct, this.style)
       this.applyStrokeWidth(item)
     }
-    if (before && this.selected.length) this.history.pushBefore(before)
+    if (before && this.selected.length) {
+      this.history.pushBefore(before)
+      this.dirty = true
+    }
     this.notify()
   }
 
@@ -261,6 +535,7 @@ export class CutForgeEditor {
     const before = this.snapshotDoc()
     for (const item of items) item.remove()
     this.history.pushBefore(before)
+    this.dirty = true
     this.deselectAll()
     this.status = 'Deleted'
     this.notify()
@@ -280,6 +555,7 @@ export class CutForgeEditor {
       return c
     })
     this.history.pushBefore(before)
+    this.dirty = true
     this.selectItems(copies)
     this.status = 'Duplicated'
   }
@@ -309,6 +585,7 @@ export class CutForgeEditor {
       }
       item.position = new paper.Point(pw / 2, ph / 2)
       this.history.pushBefore(before)
+      this.dirty = true
       this.selectItems([item])
       this.status = 'SVG imported'
     } catch (err) {
@@ -370,6 +647,7 @@ export class CutForgeEditor {
     }
 
     this.history.pushBefore(before)
+    this.dirty = true
     this.drawHandles()
     this.status = `Aligned: ${mode}`
     this.notify()
@@ -511,6 +789,9 @@ export class CutForgeEditor {
       layers: this.listLayers(),
       cursor: this.cursor,
       selectedIds: this.selected.map((s) => String(s.data.cfId)),
+      snap: { ...this.snapSettings },
+      fileName: this.fileName,
+      dirty: this.dirty,
     }
   }
 
@@ -807,6 +1088,7 @@ export class CutForgeEditor {
       this.gestureBefore = this.snapshotDoc()
       this.mode = 'move'
       this.dragStart = e.point.clone()
+      this.moveBoundsStart = this.selectedBounds()
     } else {
       // start marquee
       if (!e.modifiers.shift) this.deselectAll()
@@ -843,11 +1125,27 @@ export class CutForgeEditor {
       return
     }
     if (this.mode === 'move' && this.dragStart) {
-      const delta = e.point.subtract(this.dragStart)
+      let delta = e.point.subtract(this.dragStart)
+      if (this.moveBoundsStart) {
+        const exclude = this.selected.map((s) => String(s.data.cfId))
+        const sd = snapDelta(
+          delta,
+          this.moveBoundsStart,
+          this.snapSettings,
+          this.docLayer.children,
+          exclude,
+          this.snapTol(),
+        )
+        delta = sd.point
+        this.drawSmartGuides(sd.guideX, sd.guideY)
+      }
       for (const item of this.selected) {
         if (!item.data.locked) item.position = item.position.add(delta)
       }
       this.dragStart = e.point.clone()
+      if (this.moveBoundsStart) {
+        this.moveBoundsStart = this.selectedBounds()
+      }
       this.drawHandles()
     } else if (this.mode === 'rotate' && this.transformOrigin) {
       const ang = Math.atan2(
@@ -861,7 +1159,9 @@ export class CutForgeEditor {
       this.startRotation = ang
       this.drawHandles()
     } else if (this.mode === 'resize' && this.startBounds && this.resizeCorner) {
-      this.applyResize(e.point)
+      const exclude = this.selected.map((s) => String(s.data.cfId))
+      const pt = this.applySnap(e.point, exclude)
+      this.applyResize(pt)
       this.drawHandles()
     }
   }
@@ -926,7 +1226,10 @@ export class CutForgeEditor {
     ) {
       this.history.pushBefore(this.gestureBefore)
       this.gestureBefore = null
+      this.dirty = true
     }
+    this.clearSmartGuides()
+    this.moveBoundsStart = null
     this.mode = 'none'
     this.dragStart = null
     this.origScalings = []
@@ -934,17 +1237,18 @@ export class CutForgeEditor {
   }
 
   private onDrawDown(e: paper.ToolEvent) {
-    this.dragStart = e.point.clone()
+    const pt = this.applySnap(e.point)
+    this.dragStart = pt.clone()
     this.mode = 'draw'
     this.docLayer.activate()
 
     if (this.tool === 'freehand') {
       this.gestureBefore = this.snapshotDoc()
-      this.currentPath = new paper.Path({ segments: [e.point] })
+      this.currentPath = new paper.Path({ segments: [pt] })
       this.styleNew(this.currentPath)
       this.docLayer.addChild(this.currentPath)
     } else if (this.tool === 'polygon') {
-      this.polygonPoints.push(e.point.clone())
+      this.polygonPoints.push(pt.clone())
       this.preview?.remove()
       this.preview = new paper.Path(this.polygonPoints.map((p) => p.clone()))
       this.styleNew(this.preview)
@@ -959,7 +1263,7 @@ export class CutForgeEditor {
       }
       const before = this.snapshotDoc()
       const t = new paper.PointText({
-        point: e.point,
+        point: pt,
         content,
         fontSize: 18,
         fontFamily: 'Inter, system-ui, sans-serif',
@@ -977,8 +1281,9 @@ export class CutForgeEditor {
   private onDrawDrag(e: paper.ToolEvent) {
     if (!this.dragStart) return
     this.docLayer.activate()
+    const pt = this.applySnap(e.point)
     if (this.tool === 'freehand' && this.currentPath) {
-      this.currentPath.add(e.point)
+      this.currentPath.add(pt)
       return
     }
     if (this.tool === 'polygon' || this.tool === 'text') return
@@ -986,14 +1291,14 @@ export class CutForgeEditor {
     this.preview?.remove()
     if (this.tool === 'rect') {
       this.preview = new paper.Path.Rectangle(
-        new paper.Rectangle(this.dragStart, e.point),
+        new paper.Rectangle(this.dragStart, pt),
       )
     } else if (this.tool === 'ellipse') {
       this.preview = new paper.Path.Ellipse(
-        new paper.Rectangle(this.dragStart, e.point),
+        new paper.Rectangle(this.dragStart, pt),
       )
     } else if (this.tool === 'line') {
-      this.preview = new paper.Path.Line(this.dragStart, e.point)
+      this.preview = new paper.Path.Line(this.dragStart, pt)
     }
     if (this.preview) {
       this.styleNew(this.preview)
@@ -1006,12 +1311,14 @@ export class CutForgeEditor {
       if (this.currentPath.segments.length > 2) this.currentPath.simplify(1.5)
       if (this.currentPath.segments.length >= 2) {
         if (this.gestureBefore) this.history.pushBefore(this.gestureBefore)
+        this.dirty = true
         this.selectItems([this.currentPath])
       } else {
         this.currentPath.remove()
       }
       this.currentPath = null
       this.gestureBefore = null
+      this.dirty = true
       this.setTool('select')
     } else if (
       this.preview &&
@@ -1021,12 +1328,14 @@ export class CutForgeEditor {
         this.preview.remove()
       } else {
         if (this.gestureBefore) this.history.pushBefore(this.gestureBefore)
+        this.dirty = true
         this.selectItems([this.preview])
       }
       this.preview = null
       this.gestureBefore = null
       this.setTool('select')
     }
+    this.clearSmartGuides()
     this.mode = 'none'
     this.dragStart = null
   }
@@ -1103,6 +1412,18 @@ export class CutForgeEditor {
     const mod = e.metaKey || e.ctrlKey
     if (mod && e.key.toLowerCase() === 'd') {
       this.duplicateSelected()
+      e.preventDefault()
+    }
+    if (mod && e.key.toLowerCase() === 'a') {
+      this.selectAll()
+      e.preventDefault()
+    }
+    if (mod && e.key.toLowerCase() === 'c') {
+      this.copySelected()
+      e.preventDefault()
+    }
+    if (mod && e.key.toLowerCase() === 'v') {
+      void this.pasteClipboard()
       e.preventDefault()
     }
     if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) {

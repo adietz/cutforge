@@ -1,5 +1,14 @@
+import { useState } from 'react'
 import { PAGE_PRESETS } from '../pagePresets'
-import type { CutType, DocStyle, LayerInfo, PagePreset, Unit } from '../types'
+import type {
+  BooleanOp,
+  CutType,
+  DocStyle,
+  LayerInfo,
+  PagePreset,
+  SnapSettings,
+  Unit,
+} from '../types'
 import { HAIRLINE_MM, INCH_TO_MM } from '../types'
 import { LayersPanel } from './LayersPanel'
 
@@ -10,10 +19,12 @@ export function Inspector({
   selectedCount,
   zoom,
   layers,
+  snap,
   onUnit,
   onPage,
   onCustomSize,
   onStyle,
+  onSnap,
   onDelete,
   onDuplicate,
   onFit,
@@ -23,6 +34,8 @@ export function Inspector({
   onToggleLocked,
   onRenameLayer,
   onReorderLayer,
+  onBoolean,
+  onOffset,
 }: {
   unit: Unit
   page: PagePreset
@@ -30,10 +43,12 @@ export function Inspector({
   selectedCount: number
   zoom: number
   layers: LayerInfo[]
+  snap: SnapSettings
   onUnit: (u: Unit) => void
   onPage: (id: string) => void
   onCustomSize: (w: number, h: number) => void
   onStyle: (partial: Partial<DocStyle>) => void
+  onSnap: (partial: Partial<SnapSettings>) => void
   onDelete: () => void
   onDuplicate: () => void
   onFit: () => void
@@ -43,10 +58,13 @@ export function Inspector({
   onToggleLocked: (id: string, locked: boolean) => void
   onRenameLayer: (id: string, name: string) => void
   onReorderLayer: (id: string, dir: 'up' | 'down' | 'top' | 'bottom') => void
+  onBoolean: (op: BooleanOp) => void
+  onOffset: (offsetMm: number) => void
 }) {
   const toDisplay = (mm: number) =>
     unit === 'in' ? +(mm / INCH_TO_MM).toFixed(3) : +mm.toFixed(2)
   const fromDisplay = (v: number) => (unit === 'in' ? v * INCH_TO_MM : v)
+  const [kerf, setKerf] = useState(0.1)
 
   return (
     <aside className="inspector">
@@ -103,6 +121,42 @@ export function Inspector({
           in
         </button>
       </div>
+
+      <h2>Snap</h2>
+      <label className="check-field">
+        <input
+          type="checkbox"
+          checked={snap.grid}
+          onChange={(e) => onSnap({ grid: e.target.checked })}
+        />
+        <span>Grid snap</span>
+      </label>
+      <label className="check-field">
+        <input
+          type="checkbox"
+          checked={snap.edges}
+          onChange={(e) => onSnap({ edges: e.target.checked })}
+        />
+        <span>Edge / endpoint snap</span>
+      </label>
+      <label className="check-field">
+        <input
+          type="checkbox"
+          checked={snap.smartGuides}
+          onChange={(e) => onSnap({ smartGuides: e.target.checked })}
+        />
+        <span>Smart guides</span>
+      </label>
+      <label className="field">
+        <span>Grid spacing (mm)</span>
+        <input
+          type="number"
+          min={0.5}
+          step={0.5}
+          value={snap.gridMm}
+          onChange={(e) => onSnap({ gridMm: Math.max(0.5, +e.target.value) })}
+        />
+      </label>
 
       <h2>View</h2>
       <div className="row">
@@ -196,6 +250,69 @@ export function Inspector({
         </div>
       </label>
 
+      <h2>Path ops</h2>
+      <div className="row wrap">
+        <button
+          type="button"
+          className="btn"
+          disabled={selectedCount < 2}
+          onClick={() => onBoolean('unite')}
+        >
+          Unite
+        </button>
+        <button
+          type="button"
+          className="btn"
+          disabled={selectedCount < 2}
+          onClick={() => onBoolean('subtract')}
+        >
+          Subtract
+        </button>
+        <button
+          type="button"
+          className="btn"
+          disabled={selectedCount < 2}
+          onClick={() => onBoolean('intersect')}
+        >
+          Intersect
+        </button>
+      </div>
+      <label className="field">
+        <span>Kerf offset ({unit})</span>
+        <div className="row">
+          <input
+            type="number"
+            step={unit === 'in' ? 0.005 : 0.05}
+            value={kerf}
+            onChange={(e) => setKerf(+e.target.value)}
+          />
+          <button
+            type="button"
+            className="btn"
+            disabled={!selectedCount}
+            onClick={() =>
+              onOffset(unit === 'in' ? kerf * INCH_TO_MM : kerf)
+            }
+          >
+            Outset
+          </button>
+          <button
+            type="button"
+            className="btn"
+            disabled={!selectedCount}
+            onClick={() =>
+              onOffset(-(unit === 'in' ? kerf * INCH_TO_MM : kerf))
+            }
+          >
+            Inset
+          </button>
+        </div>
+      </label>
+      <p className="hint tight">
+        Offset scales about center (kerf-friendly for simple shapes). Boolean
+        needs closed paths; first selected is the subject for Subtract.
+      </p>
+
       <h2>Selection</h2>
       <div className="row">
         <button
@@ -226,8 +343,9 @@ export function Inspector({
       />
 
       <p className="hint">
-        Cut = stroke only. Score = dashed. Engrave = filled. Hairline SVG for
-        Silhouette Studio; DXF for laser controllers.
+        Text stays as text on SVG export (no font-outline engine). DXF adds a
+        TEXT entity plus a bounding rectangle. Convert fonts in Silhouette /
+        LightBurn if you need true glyph paths.
       </p>
     </aside>
   )

@@ -21,6 +21,8 @@ export type AlignMode =
   | 'distributeH'
   | 'distributeV'
 
+export type BooleanOp = 'unite' | 'subtract' | 'intersect'
+
 export interface PagePreset {
   id: string
   name: string
@@ -35,6 +37,14 @@ export interface DocStyle {
   cutType: CutType
   /** Silhouette hairline ≈ 0.001 in */
   hairline?: boolean
+}
+
+export interface SnapSettings {
+  grid: boolean
+  edges: boolean
+  smartGuides: boolean
+  /** Grid spacing in mm */
+  gridMm: number
 }
 
 export interface LayerInfo {
@@ -63,6 +73,9 @@ export interface EditorSnapshot {
   layers: LayerInfo[]
   cursor: CursorInfo | null
   selectedIds: string[]
+  snap: SnapSettings
+  fileName: string | null
+  dirty: boolean
 }
 
 export const INCH_TO_MM = 25.4
@@ -73,3 +86,13 @@ export const PX_PER_MM = 3.7795275591 // ~96dpi
 /** Silhouette hairline stroke width. */
 export const HAIRLINE_IN = 0.001
 export const HAIRLINE_MM = HAIRLINE_IN * INCH_TO_MM
+
+export const DEFAULT_SNAP: SnapSettings = {
+  grid: true,
+  edges: true,
+  smartGuides: true,
+  gridMm: 5,
+}
+
+export const CUTFORGE_VERSION = 1
+export const RECOVERY_KEY = 'cutforge-recovery-v1'

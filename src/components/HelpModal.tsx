@@ -19,19 +19,17 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
           <table className="shortcut-table">
             <tbody>
               {[
-                ['V', 'Select tool'],
-                ['R / E / L', 'Rectangle / Ellipse / Line'],
-                ['P', 'Polygon (Enter or double-click to close)'],
-                ['F / T', 'Freehand / Text'],
+                ['V / R / E / L / P / F / T', 'Tools'],
                 ['Drag empty', 'Marquee multi-select'],
                 ['Shift+click', 'Add/remove from selection'],
-                ['Space+drag', 'Pan canvas'],
-                ['Wheel', 'Zoom toward cursor'],
-                ['Delete / Backspace', 'Delete selection'],
-                ['Ctrl/Cmd+D', 'Duplicate'],
-                ['Ctrl/Cmd+Z', 'Undo'],
-                ['Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y', 'Redo'],
-                ['Esc', 'Cancel / return to select'],
+                ['Ctrl/Cmd+A', 'Select all'],
+                ['Ctrl/Cmd+C / V / D', 'Copy / Paste / Duplicate'],
+                ['Ctrl/Cmd+Z / Shift+Z / Y', 'Undo / Redo'],
+                ['Ctrl/Cmd+S / Shift+S', 'Save / Save As'],
+                ['Ctrl/Cmd+O', 'Open project'],
+                ['Space+drag / Wheel', 'Pan / Zoom'],
+                ['Delete', 'Delete selection'],
+                ['Esc', 'Cancel / select tool'],
                 ['?', 'This cheatsheet'],
               ].map(([k, v]) => (
                 <tr key={k}>
@@ -44,8 +42,10 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
             </tbody>
           </table>
           <p className="hint">
-            Tip: enable <strong>Hairline (0.001 in)</strong> in Style before Export SVG for
-            Silhouette Studio cut lines.
+            Projects use <strong>.cutforge</strong> JSON. Autosave recovery runs
+            every 30s while dirty. Snap + smart guides live in the inspector.
+            Text is not converted to glyph outlines (no bundled fonts)—export
+            keeps &lt;text&gt; / DXF TEXT.
           </p>
         </div>
       </div>

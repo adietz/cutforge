@@ -1,100 +1,57 @@
 # CutForge
 
-Cross-platform desktop vector design app for **laser cutting / engraving** and **Silhouette** machines (Cameo and friends). Built with **Tauri 2 + React + TypeScript + Paper.js**.
+Cross-platform desktop vector design app for **laser cutting / engraving** and **Silhouette** machines. **Tauri 2 + React + TypeScript + Paper.js**.
 
-## Features (v0.2)
+## Features (v0.3)
 
-- Dark UI: toolbar · rulers · canvas · inspector · layers
-- Page presets: Letter, A4, Silhouette Cameo 4 (12×12 in), Cameo 4 Plus (15×15 in), custom
-- Units: mm / in with live cursor readout
-- Tools: select, rectangle, ellipse, line, polygon, freehand, text
-- Selection: marquee, Shift-click toggle, move / resize / rotate, delete, duplicate
-- Align / distribute for multi-selection
-- **Undo / redo** history (draw, transform, style, delete, duplicate, import, layer ops)
-- Layers panel: visibility, lock, rename, reorder
-- Cut types: **Cut** · **Score** · **Engrave**
-- **Hairline (0.001 in)** stroke for Silhouette SVG export
-- Import SVG · Export SVG · Export DXF (laser, mm)
-- Zoom (wheel), pan (Space+drag), page grid, Help cheatsheet (`?`)
+- Dark UI: toolbar · rulers · align bar · canvas · inspector · layers
+- Page presets (Letter, A4, Cameo 4 / 4 Plus, custom); mm / in
+- Tools: select, rect, ellipse, line, polygon, freehand, text
+- Marquee + Shift multi-select; move / resize / rotate; undo/redo
+- **Snap**: grid, edge/endpoint, smart guides (inspector toggles)
+- **Projects**: `.cutforge` JSON Save / Open / Save As; autosave recovery (~30s)
+- **Path ops**: unite / subtract / intersect; kerf outset/inset
+- Copy / paste / duplicate / select-all
+- Cut · Score · Engrave; hairline SVG for Silhouette
+- Export SVG + DXF (curves as dense polylines; CUT/SCORE/ENGRAVE layers)
+- Help cheatsheet (`?`)
 
-## Requirements
-
-- Node.js 20+ (22 recommended)
-- Rust toolchain **1.90+** via rustup (Tauri 2.12) — https://rustup.rs
-- OS deps for Tauri:
-  - **Linux**: `webkit2gtk-4.1`, GTK 3, `librsvg2`, `patchelf` (see [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/))
-  - **macOS**: Xcode CLT
-  - **Windows**: WebView2 + MSVC build tools
-
-## Quick start (web UI)
+## Run
 
 ```bash
 cd cutforge
 npm install
-npm run dev
-```
-
-## Desktop app (Tauri)
-
-```bash
-cd cutforge
-npm install
-npm run tauri:dev
-```
-
-Production installers:
-
-```bash
+npm run dev          # web UI
+npm run tauri:dev    # native (Rust 1.90+)
 npm run tauri:build
 ```
 
-Artifacts under `src-tauri/target/release/bundle/`.
-
-## Keyboard shortcuts
+## Shortcuts
 
 | Key | Action |
 |-----|--------|
-| V | Select |
-| R | Rectangle |
-| E | Ellipse |
-| L | Line |
-| P | Polygon (Enter / double-click to close) |
-| F | Freehand |
-| T | Text |
-| Drag empty canvas | Marquee multi-select |
-| Shift+click | Add/remove from selection |
-| Space+drag | Pan |
-| Wheel | Zoom |
-| Delete / Backspace | Delete selection |
-| Ctrl/Cmd+D | Duplicate |
-| Ctrl/Cmd+Z | Undo |
-| Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y | Redo |
-| Esc | Cancel polygon / back to select |
-| ? | Shortcuts cheatsheet |
-
-Also available from **Help** in the top bar.
+| V R E L P F T | Tools |
+| Drag empty / Shift+click | Marquee / toggle select |
+| Ctrl/Cmd+A C V D | Select all / Copy / Paste / Duplicate |
+| Ctrl/Cmd+Z / Shift+Z / Y | Undo / Redo |
+| Ctrl/Cmd+S / Shift+S / O | Save / Save As / Open |
+| Space+drag / Wheel | Pan / Zoom |
+| Delete / Esc / ? | Delete / Cancel / Help |
 
 ## Export notes
 
-- **SVG**: page-sized `viewBox`, mm or in units, `data-cut-type` on paths. Enable **Hairline (0.001 in)** for Silhouette Studio cut lines.
-- **DXF**: ASCII LWPOLYLINE / TEXT on layers `CUT`, `SCORE`, `ENGRAVE`, units mm — LightBurn, LaserGRBL, many CO₂ controllers.
+- **SVG**: mm or in `viewBox`; optional hairline `0.001in`. Text remains `<text>` (no glyph outline engine without bundling fonts).
+- **DXF**: mm; ellipses/arcs/beziers → LWPOLYLINE sampling; TEXT + bounds rect for text; layers CUT / SCORE / ENGRAVE.
 
-## Project layout
+## Project file
 
-```
-src/                 React UI + Paper.js editor
-src/canvas/          Editor engine + history
-src/export/          SVG + DXF writers
-src-tauri/           Tauri 2 / Rust shell
-```
+`.cutforge` JSON includes page, units, style, snap settings, and Paper.js object JSON. Recovery is stored in `localStorage` while the document is dirty.
 
-## Remaining gaps (toward daily driver)
+## Remaining gaps
 
-- True boolean ops / path offset / nested cut holes
-- Snap to grid / guides / object edges
-- Persist `.cutforge` project files; autosave
-- Print-to-cut registration marks
-- Direct send to Silhouette / LightBurn
-- DXF arcs/ellipses without polyline sampling
-- Multi-page / multi-mat jobs
-- Better text-to-path for cutters that ignore fonts
+- True parallel curve offset (current kerf offset is scale-about-center)
+- Snap-to-angle / constrain while drawing
+- Native file dialogs via Tauri (currently browser download/upload)
+- Font-based text-to-path (opentype) if/when fonts are bundled
+- Boolean robustness on open paths / self-intersections
+- Multi-mat jobs, registration marks, machine send
