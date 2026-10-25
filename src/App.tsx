@@ -629,6 +629,22 @@ export default function App() {
         }
         page={page}
         onStatus={setStatus}
+      onApplyProfile={(prof) => {
+          const preset = prof.pagePresetId
+            ? presetById(prof.pagePresetId)
+            : {
+                id: 'custom',
+                name: prof.name,
+                widthMm: prof.bedWidthMm,
+                heightMm: prof.bedHeightMm,
+              }
+          setPage({
+            ...preset,
+            widthMm: prof.bedWidthMm,
+            heightMm: prof.bedHeightMm,
+          })
+          setStatus(`Bed → ${prof.bedWidthMm}×${prof.bedHeightMm} mm (${prof.name})`)
+        }}
       />
       <MachinePanel
         open={machinePanelOpen}
@@ -663,6 +679,23 @@ export default function App() {
         onStatus={setStatus}
         colorMap={laserColorMap}
         onColorMap={applyLaserColorMap}
+        onApplyProfile={(prof) => {
+          const preset = prof.pagePresetId
+            ? presetById(prof.pagePresetId)
+            : {
+                id: 'custom',
+                name: prof.name,
+                widthMm: prof.bedWidthMm,
+                heightMm: prof.bedHeightMm,
+              }
+          setPage({
+            ...preset,
+            widthMm: prof.bedWidthMm,
+            heightMm: prof.bedHeightMm,
+            name: `${preset.name.split('(')[0].trim()} (${prof.bedWidthMm}×${prof.bedHeightMm} mm)`,
+          })
+          setStatus(`Bed → ${prof.bedWidthMm}×${prof.bedHeightMm} mm (${prof.name})`)
+        }}
       />
       <MachineExportModal
         open={machineExportOpen}

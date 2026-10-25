@@ -15,6 +15,7 @@ export interface SendProgress {
   line: string
   done: boolean
   cancelled: boolean
+  paused: boolean
   error: string | null
 }
 
@@ -46,6 +47,14 @@ export async function serialWriteLine(line: string): Promise<string> {
 
 export async function serialCancelJob(): Promise<void> {
   return invoke('serial_cancel_job')
+}
+
+export async function serialPauseJob(): Promise<void> {
+  return invoke('serial_pause_job')
+}
+
+export async function serialResumeJob(): Promise<void> {
+  return invoke('serial_resume_job')
 }
 
 export async function serialHome(): Promise<string> {

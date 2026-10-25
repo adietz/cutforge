@@ -9,7 +9,7 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
         onClick={(e) => e.stopPropagation()}
       >
         <header className="modal-header">
-          <h2>CutForge · v1.5</h2>
+          <h2>CutForge · v1.6</h2>
           <button type="button" className="btn" onClick={onClose}>
             Close
           </button>
@@ -34,6 +34,11 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
             </tbody>
           </table>
           <p className="hint">
+            <strong>Job controls:</strong> During Send to K1 — Pause (!), Resume (~),
+            Cancel (hold → M5 → soft-reset). Check origin after a long pause.
+            <br />
+            <strong>Profiles:</strong> Named beds + USB/Wi‑Fi defaults; apply sets document size.
+            <br />
             <strong>Layers:</strong> Inspector → Layers. Top of the list cuts
             first. Visible/locked toggles; color + Cut/Score/Engrave/Print;
             optional S/F/passes overrides for K1. New shapes go on the active

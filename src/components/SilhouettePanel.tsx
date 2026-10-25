@@ -7,6 +7,13 @@ import {
 import { cloneSilhouette, type MaterialPreset } from '../machine/materials'
 import { loadMaterials } from '../machine/materialsStore'
 import { MaterialsLibraryModal } from './MaterialsLibraryModal'
+import { MachineProfilesModal } from './MachineProfilesModal'
+import {
+  getActiveProfileId,
+  loadProfiles,
+  setActiveProfileId,
+  type MachineProfile,
+} from '../machine/machineProfiles'
 import { generateGpgl, type RegMarkSeekMode } from '../machine/gpgl'
 import {
   listSilhouetteDevices,
@@ -25,18 +32,23 @@ export function SilhouettePanel({
   getItems,
   page,
   onStatus,
+  onApplyProfile,
 }: {
   open: boolean
   onClose: () => void
   getItems: () => paper.Item[]
   page: PagePreset
   onStatus: (s: string) => void
+  onApplyProfile?: (profile: MachineProfile) => void
 }) {
   const [printThenCut, setPrintThenCut] = useState(true)
   const [regMarkSeek, setRegMarkSeek] = useState<RegMarkSeekMode>('auto')
   const [materials, setMaterials] = useState<MaterialPreset[]>(() => loadMaterials())
   const [materialId, setMaterialId] = useState('sil-vinyl')
   const [materialsOpen, setMaterialsOpen] = useState(false)
+  const [profiles, setProfiles] = useState<MachineProfile[]>(() => loadProfiles())
+  const [profileId, setProfileId] = useState(() => getActiveProfileId())
+  const [profilesOpen, setProfilesOpen] = useState(false)
   const native = silhouetteUsbAvailable()
   const [devices, setDevices] = useState<SilhouetteDeviceInfo[]>([])
   const [selected, setSelected] = useState('')
@@ -87,6 +99,8 @@ export function SilhouettePanel({
   useEffect(() => {
     if (!open) return
     setMaterials(loadMaterials())
+    setProfiles(loadProfiles())
+    setProfileId(getActiveProfileId())
     void refresh()
     rebuild()
   }, [open, refresh, rebuild])
@@ -223,7 +237,41 @@ export function SilhouettePanel({
               </button>
             </div>
 
-            <h3 style={{ marginTop: 12 }}>Material</h3>
+            <h3 style={{ marginTop: 12 }}>Machine profile</h3>
+            <label className="field">
+              <span>Active profile</span>
+              <select
+                value={profileId}
+                onChange={(e) => {
+                  const id = e.target.value
+                  setProfileId(id)
+                  setActiveProfileId(id)
+                  const pr = profiles.find((x) => x.id === id)
+                  if (pr) {
+                    onApplyProfile?.(pr)
+                    onStatus(`Profile: ${pr.name}`)
+                  }
+                }}
+              >
+                {profiles
+                  .filter((pr) => pr.kind === 'silhouette')
+                  .map((pr) => (
+                    <option key={pr.id} value={pr.id}>
+                      {pr.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="btn"
+              style={{ marginTop: 4 }}
+              onClick={() => setProfilesOpen(true)}
+            >
+              Edit profiles…
+            </button>
+
+            <h3 style={{ marginTop: 14 }}>Material</h3>
             <label className="field">
               <span>Silhouette media preset</span>
               <select
@@ -372,6 +420,21 @@ export function SilhouettePanel({
         </div>
       </div>
     </div>
+    <MachineProfilesModal
+      open={profilesOpen}
+      onClose={() => {
+        setProfilesOpen(false)
+        setProfiles(loadProfiles())
+      }}
+      filterKind="silhouette"
+      onApply={(prof) => {
+        setProfiles(loadProfiles())
+        setProfileId(prof.id)
+        setActiveProfileId(prof.id)
+        onApplyProfile?.(prof)
+      }}
+      onStatus={onStatus}
+    />
     <MaterialsLibraryModal
       open={materialsOpen}
       onClose={() => {

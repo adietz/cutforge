@@ -15,6 +15,8 @@ pub fn run() {
       serial_grbl::serial_is_connected,
       serial_grbl::serial_write_line,
       serial_grbl::serial_cancel_job,
+      serial_grbl::serial_pause_job,
+      serial_grbl::serial_resume_job,
       serial_grbl::serial_home,
       serial_grbl::serial_jog,
       serial_grbl::serial_query_status,

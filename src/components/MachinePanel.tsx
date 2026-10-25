@@ -24,6 +24,8 @@ import {
   onGrblProgress,
   serialAvailable,
   serialCancelJob,
+  serialPauseJob,
+  serialResumeJob,
   serialConnect,
   serialDisconnect,
   serialHome,
@@ -37,6 +39,13 @@ import {
   type SendProgress,
   type GrblStatus,
 } from '../machine/serial'
+import {
+  getActiveProfileId,
+  loadProfiles,
+  setActiveProfileId,
+  type MachineProfile,
+} from '../machine/machineProfiles'
+import { MachineProfilesModal } from './MachineProfilesModal'
 import {
   fileToImageData,
   rasterImageToGcode,
@@ -59,6 +68,7 @@ export function MachinePanel({
   onStatus,
   colorMap,
   onColorMap,
+  onApplyProfile,
 }: {
   open: boolean
   onClose: () => void
@@ -78,6 +88,8 @@ export function MachinePanel({
   onStatus: (s: string) => void
   colorMap: LaserColorMapEntry[]
   onColorMap: (map: LaserColorMapEntry[]) => void
+  /** Apply bed size / page when a machine profile is chosen */
+  onApplyProfile?: (profile: MachineProfile) => void
 }) {
   const native = serialAvailable()
   const [ports, setPorts] = useState<PortInfo[]>([])
@@ -92,7 +104,14 @@ export function MachinePanel({
   })
   const [preview, setPreview] = useState('')
   const [sending, setSending] = useState(false)
+  const [jobPaused, setJobPaused] = useState(false)
+  const [jobPhase, setJobPhase] = useState<
+    'idle' | 'running' | 'paused' | 'done' | 'cancelled' | 'error'
+  >('idle')
   const [progress, setProgress] = useState<SendProgress | null>(null)
+  const [profiles, setProfiles] = useState<MachineProfile[]>(() => loadProfiles())
+  const [profileId, setProfileId] = useState(() => getActiveProfileId())
+  const [profilesOpen, setProfilesOpen] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [materials, setMaterials] = useState<MaterialPreset[]>(() => loadMaterials())
   const [materialId, setMaterialId] = useState('basswood-3mm')
@@ -124,10 +143,32 @@ export function MachinePanel({
   useEffect(() => {
     if (!open) return
     setMaterials(loadMaterials())
+    const profs = loadProfiles()
+    setProfiles(profs)
+    const aid = getActiveProfileId()
+    setProfileId(aid)
+    const ap = profs.find((p) => p.id === aid)
+    if (ap?.kind === 'laser-grbl') {
+      setBaud(ap.baud || 115200)
+      if (ap.wifiHost) setWifiHost(ap.wifiHost)
+      if (ap.wifiPort) setWifiPort(ap.wifiPort)
+    }
     void refreshPorts()
     void serialIsConnected().then(setConnected).catch(() => setConnected(false))
     let un: (() => void) | undefined
-    void onGrblProgress((p) => setProgress(p)).then((u) => {
+    void onGrblProgress((p) => {
+      setProgress(p)
+      if (p.cancelled) setJobPhase('cancelled')
+      else if (p.error) setJobPhase('error')
+      else if (p.done) setJobPhase('done')
+      else if (p.paused) {
+        setJobPaused(true)
+        setJobPhase('paused')
+      } else {
+        setJobPaused(false)
+        setJobPhase('running')
+      }
+    }).then((u) => {
       un = u
     })
     let alive = true
@@ -185,6 +226,21 @@ export function MachinePanel({
     return estimateGcodeTime(preview)
   }, [preview])
 
+  const applyMachineProfile = (id: string, list?: MachineProfile[]) => {
+    const profs = list || profiles
+    const p = profs.find((x) => x.id === id)
+    if (!p) return
+    setProfileId(id)
+    setActiveProfileId(id)
+    if (p.kind === 'laser-grbl') {
+      setBaud(p.baud || 115200)
+      if (p.wifiHost) setWifiHost(p.wifiHost)
+      if (p.wifiPort) setWifiPort(p.wifiPort)
+    }
+    onApplyProfile?.(p)
+    onStatus(`Profile: ${p.name} (${p.bedWidthMm}×${p.bedHeightMm} mm)`)
+  }
+
   if (!open) return null
 
   const connect = async () => {
@@ -229,15 +285,33 @@ export function MachinePanel({
       return
     }
     setSending(true)
-    setProgress({ sent: 0, total: lines.length, line: '', done: false, cancelled: false, error: null })
+    setJobPaused(false)
+    setJobPhase('running')
+    setProgress({
+      sent: 0,
+      total: lines.length,
+      line: '',
+      done: false,
+      cancelled: false,
+      paused: false,
+      error: null,
+    })
     setErr(null)
     try {
       const result = await serialSendGcode(lines)
       setProgress(result)
-      if (result.cancelled) onStatus('Job cancelled — laser off')
-      else if (result.error) onStatus(`Job error: ${result.error}`)
-      else onStatus(`Job complete (${result.sent} lines)`)
+      if (result.cancelled) {
+        setJobPhase('cancelled')
+        onStatus('Job cancelled — laser off (hold + soft-reset)')
+      } else if (result.error) {
+        setJobPhase('error')
+        onStatus(`Job error: ${result.error}`)
+      } else {
+        setJobPhase('done')
+        onStatus(`Job complete (${result.sent} lines)`)
+      }
     } catch (e) {
+      setJobPhase('error')
       setErr(String(e))
       onStatus(`Send failed: ${String(e)}`)
       try {
@@ -247,6 +321,7 @@ export function MachinePanel({
       }
     } finally {
       setSending(false)
+      setJobPaused(false)
     }
   }
 
@@ -440,7 +515,36 @@ export function MachinePanel({
               </p>
             )}
 
-            <h3>Connection</h3>
+            <h3>Machine profile</h3>
+            <label className="field">
+              <span>Active profile</span>
+              <select
+                value={profileId}
+                onChange={(e) => applyMachineProfile(e.target.value)}
+              >
+                {profiles
+                  .filter((p) => p.kind === 'laser-grbl')
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="btn"
+              style={{ marginTop: 4 }}
+              onClick={() => setProfilesOpen(true)}
+            >
+              Edit profiles…
+            </button>
+            <p className="hint tight">
+              {profiles.find((p) => p.id === profileId)?.notes ||
+                'Bed size and connection defaults from the profile.'}
+            </p>
+
+            <h3 style={{ marginTop: 14 }}>Connection</h3>
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
               <label className="field" style={{ flex: 1, minWidth: 160 }}>
                 <span>Port</span>
@@ -835,7 +939,29 @@ export function MachinePanel({
               {wifiBusy ? 'Wi‑Fi sending…' : 'Send via Wi‑Fi (TCP)'}
             </button>
 
-            <div className="row" style={{ gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+            <h3 style={{ marginTop: 14 }}>Job controls</h3>
+            <p className="hint tight">
+              Status:{' '}
+              <strong>
+                {jobPhase === 'idle'
+                  ? 'Idle'
+                  : jobPhase === 'running'
+                    ? 'Running'
+                    : jobPhase === 'paused'
+                      ? 'Paused'
+                      : jobPhase === 'done'
+                        ? 'Done'
+                        : jobPhase === 'cancelled'
+                          ? 'Cancelled'
+                          : 'Error'}
+              </strong>
+              {progress && !progress.done
+                ? ` · ${progress.sent}/${progress.total}`
+                : progress?.done
+                  ? ` · ${progress.sent}/${progress.total}`
+                  : ''}
+            </p>
+            <div className="row" style={{ gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
               <button type="button" className="btn" onClick={rebuildPreview}>
                 Refresh G-code
               </button>
@@ -852,21 +978,68 @@ export function MachinePanel({
               </button>
               <button
                 type="button"
+                className="btn"
+                disabled={!sending || jobPaused}
+                onClick={() =>
+                  void serialPauseJob()
+                    .then(() => {
+                      setJobPaused(true)
+                      setJobPhase('paused')
+                      onStatus(
+                        'Paused (! feed hold). Resume may need an origin check after a long hold.',
+                      )
+                    })
+                    .catch((e) => setErr(String(e)))
+                }
+                title="GRBL real-time feed hold (!)"
+              >
+                Pause
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={!sending || !jobPaused}
+                onClick={() =>
+                  void serialResumeJob()
+                    .then(() => {
+                      setJobPaused(false)
+                      setJobPhase('running')
+                      onStatus('Resumed (~ cycle start) — verify origin if paused long')
+                    })
+                    .catch((e) => setErr(String(e)))
+                }
+                title="GRBL cycle start (~)"
+              >
+                Resume
+              </button>
+              <button
+                type="button"
                 className="btn danger"
                 disabled={!sending && !connected}
                 onClick={() =>
                   void serialCancelJob()
-                    .then(() => onStatus('Cancel — laser off'))
+                    .then(() => {
+                      setJobPhase('cancelled')
+                      setJobPaused(false)
+                      onStatus('Cancel: ! hold → M5 → soft-reset → M5')
+                    })
                     .catch((e) => setErr(String(e)))
                 }
+                title="Feed hold, laser off, soft-reset buffer"
               >
-                Cancel / laser off
+                Cancel / Stop
               </button>
             </div>
-
+            {sending && (
+              <p className="hint warn-text" style={{ marginTop: 6 }}>
+                After a long pause, check work origin before Resume. Cancel uses
+                soft-reset (clears buffer) — start a new job afterward.
+              </p>
+            )}
             {progress && (
               <p className="hint tight">
                 Progress: {progress.sent}/{progress.total}
+                {progress.paused ? ' (paused)' : ''}
                 {progress.cancelled ? ' (cancelled)' : ''}
                 {progress.error ? ` — ${progress.error}` : ''}
               </p>
@@ -906,6 +1079,20 @@ export function MachinePanel({
         const next = loadMaterials()
         setMaterials(next)
         applyMaterial(mat.id, next)
+      }}
+      onStatus={onStatus}
+    />
+    <MachineProfilesModal
+      open={profilesOpen}
+      onClose={() => {
+        setProfilesOpen(false)
+        setProfiles(loadProfiles())
+      }}
+      filterKind="laser-grbl"
+      onApply={(prof) => {
+        const next = loadProfiles()
+        setProfiles(next)
+        applyMachineProfile(prof.id, next)
       }}
       onStatus={onStatus}
     />

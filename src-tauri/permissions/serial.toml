@@ -8,6 +8,8 @@ commands.allow = [
   "serial_is_connected",
   "serial_write_line",
   "serial_cancel_job",
+  "serial_pause_job",
+  "serial_resume_job",
   "serial_home",
   "serial_jog",
   "serial_query_status",

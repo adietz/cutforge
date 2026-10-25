@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 static CANCEL: AtomicBool = AtomicBool::new(false);
+static PAUSED: AtomicBool = AtomicBool::new(false);
 static PORT: Lazy<Mutex<Option<Box<dyn serialport::SerialPort>>>> =
     Lazy::new(|| Mutex::new(None));
 
@@ -32,6 +33,7 @@ pub struct SendProgress {
     pub line: String,
     pub done: bool,
     pub cancelled: bool,
+    pub paused: bool,
     pub error: Option<String>,
 }
 
@@ -49,6 +51,16 @@ fn laser_off_best_effort() {
         let _ = p.flush();
         Ok(())
     });
+}
+
+/// GRBL real-time command (no line ending required): ! hold, ~ resume, 0x18 reset.
+fn realtime_byte(b: u8) -> Result<(), String> {
+    with_port_mut(|p| {
+        p.write_all(&[b])
+            .map_err(|e| format!("Realtime write failed: {e}"))?;
+        p.flush().map_err(|e| format!("Flush failed: {e}"))?;
+        Ok(())
+    })
 }
 
 #[tauri::command]
@@ -104,6 +116,7 @@ pub fn serial_connect(path: String, baud: u32) -> Result<String, String> {
     let mut guard = PORT.lock().map_err(|e| e.to_string())?;
     *guard = Some(port);
     CANCEL.store(false, Ordering::SeqCst);
+    PAUSED.store(false, Ordering::SeqCst);
 
     // Wake GRBL / clear
     let _ = with_port_mut(|p| {
@@ -215,14 +228,35 @@ fn wait_for_ok(timeout_ms: u64) -> Result<String, String> {
     })
 }
 
+/// Pause streaming job: GRBL feed hold `!` (laser mode typically blanks the diode).
+#[tauri::command]
+pub fn serial_pause_job() -> Result<(), String> {
+    PAUSED.store(true, Ordering::SeqCst);
+    realtime_byte(b'!')?;
+    Ok(())
+}
+
+/// Resume after pause: clear hold flag and GRBL cycle-start `~`.
+#[tauri::command]
+pub fn serial_resume_job() -> Result<(), String> {
+    PAUSED.store(false, Ordering::SeqCst);
+    realtime_byte(b'~')?;
+    Ok(())
+}
+
+/// Cancel job: feed hold `!` → M5 → soft-reset 0x18 → M5 again.
+/// Clears planner buffer; do not leave the diode on.
 #[tauri::command]
 pub fn serial_cancel_job() -> Result<(), String> {
     CANCEL.store(true, Ordering::SeqCst);
-    // Feed hold then laser off (best-effort)
-    let _ = serial_write_raw("!\n");
-    std::thread::sleep(Duration::from_millis(50));
+    PAUSED.store(false, Ordering::SeqCst);
+    let _ = realtime_byte(b'!');
+    std::thread::sleep(Duration::from_millis(80));
     laser_off_best_effort();
-    let _ = serial_write_raw("\x18");
+    std::thread::sleep(Duration::from_millis(40));
+    let _ = realtime_byte(0x18); // soft reset — clears buffer, Idle
+    std::thread::sleep(Duration::from_millis(200));
+    laser_off_best_effort();
     Ok(())
 }
 
@@ -350,6 +384,7 @@ fn parse_xy(s: &str) -> (Option<f64>, Option<f64>) {
 #[tauri::command]
 pub fn serial_send_gcode(app: AppHandle, lines: Vec<String>) -> Result<SendProgress, String> {
     CANCEL.store(false, Ordering::SeqCst);
+    PAUSED.store(false, Ordering::SeqCst);
     let total = lines.len();
     let mut sent = 0usize;
 
@@ -358,6 +393,21 @@ pub fn serial_send_gcode(app: AppHandle, lines: Vec<String>) -> Result<SendProgr
     let _ = wait_for_ok(1000);
 
     for raw in lines {
+        // Honor pause: stop feeding new lines until resume or cancel
+        while PAUSED.load(Ordering::SeqCst) && !CANCEL.load(Ordering::SeqCst) {
+            let prog = SendProgress {
+                sent,
+                total,
+                line: raw.trim().to_string(),
+                done: false,
+                cancelled: false,
+                paused: true,
+                error: None,
+            };
+            let _ = app.emit("grbl-progress", &prog);
+            std::thread::sleep(Duration::from_millis(80));
+        }
+
         if CANCEL.load(Ordering::SeqCst) {
             laser_off_best_effort();
             let prog = SendProgress {
@@ -366,6 +416,7 @@ pub fn serial_send_gcode(app: AppHandle, lines: Vec<String>) -> Result<SendProgr
                 line: String::new(),
                 done: true,
                 cancelled: true,
+                paused: false,
                 error: None,
             };
             let _ = app.emit("grbl-progress", &prog);
@@ -389,6 +440,7 @@ pub fn serial_send_gcode(app: AppHandle, lines: Vec<String>) -> Result<SendProgr
                     line: line.to_string(),
                     done: true,
                     cancelled: false,
+                    paused: false,
                     error: Some(e.clone()),
                 };
                 let _ = app.emit("grbl-progress", &prog);
@@ -396,19 +448,21 @@ pub fn serial_send_gcode(app: AppHandle, lines: Vec<String>) -> Result<SendProgr
             }
         }
         sent += 1;
-        if sent % 5 == 0 || sent == total {
+        if sent % 5 == 0 || sent == total || PAUSED.load(Ordering::SeqCst) {
             let prog = SendProgress {
                 sent,
                 total,
                 line: line.to_string(),
                 done: false,
                 cancelled: false,
+                paused: PAUSED.load(Ordering::SeqCst),
                 error: None,
             };
             let _ = app.emit("grbl-progress", &prog);
         }
     }
 
+    PAUSED.store(false, Ordering::SeqCst);
     laser_off_best_effort();
     let _ = serial_write_raw("G0 X0 Y0\n");
     let prog = SendProgress {
@@ -417,6 +471,7 @@ pub fn serial_send_gcode(app: AppHandle, lines: Vec<String>) -> Result<SendProgr
         line: String::new(),
         done: true,
         cancelled: false,
+        paused: false,
         error: None,
     };
     let _ = app.emit("grbl-progress", &prog);
