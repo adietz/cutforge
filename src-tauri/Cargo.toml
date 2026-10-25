@@ -1,6 +1,6 @@
 [package]
 name = "cutforge"
-version = "1.3.0"
+version = "1.4.0"
 description = "CutForge — vector design for laser cutting and Silhouette"
 authors = ["Andy Dietz"]
 edition = "2021"

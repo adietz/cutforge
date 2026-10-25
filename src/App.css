@@ -141,14 +141,27 @@
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
-  gap: 4px;
+  flex-wrap: wrap;
+  gap: 8px 12px;
   padding: 4px 10px 4px 32px;
   border-bottom: 1px solid #232833;
   background: #12151c;
 }
 
-.align-bar.disabled {
+.align-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.align-group.disabled {
   opacity: 0.45;
+}
+
+.align-sep {
+  width: 1px;
+  height: 22px;
+  background: #2a3140;
 }
 
 .align-label {
@@ -853,4 +866,31 @@ kbd {
 }
 .ok-text {
   color: #3ecf8e;
+}
+
+.nest-btn {
+  font-size: 11px;
+  padding: 3px 8px;
+  height: 26px;
+}
+.nest-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #8b93a7;
+  margin-left: 4px;
+}
+.nest-field input {
+  width: 52px;
+  height: 24px;
+  font-size: 11px;
+}
+.nest-check {
+  font-size: 11px;
+  margin-left: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #8b93a7;
 }

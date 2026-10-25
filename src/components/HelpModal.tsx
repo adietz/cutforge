@@ -9,7 +9,7 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
         onClick={(e) => e.stopPropagation()}
       >
         <header className="modal-header">
-          <h2>CutForge · v1.3</h2>
+          <h2>CutForge · v1.4</h2>
           <button type="button" className="btn" onClick={onClose}>
             Close
           </button>
@@ -34,16 +34,14 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
             </tbody>
           </table>
           <p className="hint">
-            <strong>Materials:</strong> Send to K1 / Silhouette → Edit materials
-            library (add/edit/delete; localStorage). Apply to job for
-            speed/power/passes or Silhouette force.
+            <strong>Nest / Pack:</strong> top Arrange bar → Nest selection or Nest
+            all. Packs AABB shelves onto the current page/bed with gap &amp;
+            margin (default ~2.5 / 3 mm). Optional 90° rotations. Undo restores
+            prior poses. Locked/hidden/guides/reg-marks skipped. Not free-angle
+            nesting.
             <br />
-            <strong>K1 frame / jog:</strong> step 1/10/50 mm jog (laser off),
-            Home, Go origin, Frame selection/job (bbox outline; optional
-            low-power — never a cut). Status shows WPos/MPos when connected.
-            <br />
-            <strong>Also:</strong> Import AI/CDR/SVG · Print &amp; Cut · bitmap
-            engrave · Wi‑Fi TCP.
+            <strong>Also:</strong> materials library · K1 jog/frame · Import ·
+            Print &amp; Cut.
           </p>
         </div>
       </div>

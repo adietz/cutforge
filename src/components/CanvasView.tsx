@@ -103,7 +103,9 @@ export function CanvasView({
     <div className="canvas-stage">
       <AlignBar
         selectedCount={selectedCount}
+        objectCount={objectCount}
         onAlign={(m: AlignMode) => editorRef.current?.align(m)}
+        onNest={(mode, opts) => editorRef.current?.nestItems(mode, opts)}
       />
       <div className="ruler-corner" />
       <canvas ref={hRulerRef} className="ruler ruler-h" height={RULER} />

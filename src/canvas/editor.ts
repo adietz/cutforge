@@ -5,6 +5,7 @@ import { snapDelta, snapPoint } from './snap'
 import { booleanOperate, offsetPath } from './booleans'
 import { constrainPointToAngle, snapAngleDeg } from './angles'
 import { buildRegistrationMarks } from './regMarks'
+import { packShelf } from './nesting'
 import { convertPointTextToOutlines } from './textOutlines'
 import { parseDocument, serializeDocument } from '../project/cutforgeDoc'
 import type { CutForgeDocument } from '../project/cutforgeDoc'
@@ -980,6 +981,98 @@ export class CutForgeEditor {
     this.status = `Aligned: ${mode}`
     this.notify()
   }
+
+  /**
+   * Nest / pack shapes onto the page (AABB shelf packing, optional 90°).
+   * One undo restores prior positions and rotations.
+   */
+  nestItems(
+    mode: 'selection' | 'all',
+    opts?: { gapMm?: number; marginMm?: number; allowRotate90?: boolean },
+  ): { placed: number; failed: number } {
+    const gapMm = opts?.gapMm ?? 2.5
+    const marginMm = opts?.marginMm ?? 3
+    const allowRotate90 = opts?.allowRotate90 !== false
+
+    let items: paper.Item[]
+    if (mode === 'selection') {
+      items = this.selected.filter((i) => this.isNestable(i))
+    } else {
+      items = this.docLayer.children.filter((i) => this.isNestable(i))
+    }
+    if (items.length < 1) {
+      this.status = 'Nest: nothing to pack'
+      this.notify()
+      return { placed: 0, failed: 0 }
+    }
+
+    const before = this.snapshotDoc()
+    const gapPx = gapMm * PX_PER_MM
+    const marginPx = marginMm * PX_PER_MM
+    const binW = this.page.widthMm * PX_PER_MM - 2 * marginPx
+    const binH = this.page.heightMm * PX_PER_MM - 2 * marginPx
+    if (binW <= 1 || binH <= 1) {
+      this.status = 'Nest: page too small for margin'
+      this.notify()
+      return { placed: 0, failed: items.length }
+    }
+
+    const idOf = (it: paper.Item) => String(it.data.cfId || it.id)
+    const parts = items.map((it) => ({
+      id: idOf(it),
+      width: it.bounds.width,
+      height: it.bounds.height,
+    }))
+
+    const { placements, failedIds } = packShelf(parts, {
+      binWidth: binW,
+      binHeight: binH,
+      gap: gapPx,
+      allowRotate90,
+    })
+
+    const byId = new Map(items.map((it) => [idOf(it), it]))
+    const origin = new paper.Point(marginPx, marginPx)
+
+    for (const pl of placements) {
+      const item = byId.get(pl.id)
+      if (!item) continue
+      if (pl.rotated) {
+        item.rotate(90, item.bounds.center)
+      }
+      // Position so AABB top-left sits at bin slot
+      const b = item.bounds
+      item.position = item.position.add(
+        new paper.Point(
+          origin.x + pl.x - b.left,
+          origin.y + pl.y - b.top,
+        ),
+      )
+    }
+
+    this.history.pushBefore(before)
+    this.dirty = true
+    this.drawHandles()
+    const placed = placements.length
+    const failed = failedIds.length
+    this.status =
+      failed > 0
+        ? `Nested ${placed} · ${failed} did not fit (gap ${gapMm} mm, margin ${marginMm} mm)`
+        : `Nested ${placed} parts (gap ${gapMm} mm)`
+    this.notify()
+    return { placed, failed }
+  }
+
+  private isNestable(item: paper.Item): boolean {
+    if (!item.visible || item.data?.locked) return false
+    if (isGuide(item)) return false
+    if (item.data?.isRegMark) return false
+    if (item.data?.isHandle || item.data?.isPage) return false
+    // Skip empty / zero-size
+    if (item.bounds.width < 0.1 || item.bounds.height < 0.1) return false
+    return true
+  }
+
 
   selectById(id: string, additive = false) {
     const item = this.docLayer.children.find((c) => c.data.cfId === id)
