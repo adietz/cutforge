@@ -48,7 +48,42 @@ Each profile stores: name, type (laser GRBL / Silhouette), bed W×H mm, origin c
 
 See Help and `docs/IMPORT.md`.
 
-## Run
+
+## Install from GitHub Releases
+
+Prebuilt installers are published at:
+
+**https://github.com/adietz/cutforge/releases**
+
+Tag a version (`v1.6.0`, …) or run the **Release** workflow; GitHub Actions builds:
+
+| OS | Download |
+|----|----------|
+| **macOS** (Apple Silicon / Intel) | `.dmg` (or `.app.tar.gz`) |
+| **Windows** | NSIS `*-setup.exe` (and/or `.msi`) |
+| **Linux** | `.AppImage` and/or `.deb` |
+
+### Unsigned builds (v1)
+
+CI does **not** sign with an Apple Developer ID or a Windows Authenticode certificate yet. That is expected for this release line:
+
+- **macOS Gatekeeper** — first open may say the app is damaged / can’t be opened. Right‑click → **Open**, or remove the quarantine flag:  
+  `xattr -cr /Applications/CutForge.app`  
+  (or on the `.dmg` / extracted app). An Apple Developer account + notarization will remove this later.
+- **Windows SmartScreen** — “Windows protected your PC”. Choose **More info** → **Run anyway**.
+- **Linux** — mark AppImage executable: `chmod +x CutForge_*.AppImage`, then run it. `.deb` installs with `sudo dpkg -i …`.
+
+### Local desktop build
+
+```bash
+npm install
+npm run tauri:build
+# artifacts under src-tauri/target/release/bundle/
+```
+
+Linux needs WebKitGTK 4.1 and friends (`libwebkit2gtk-4.1-dev`, `librsvg2-dev`, `patchelf`, …). See the Release workflow for the exact apt list.
+
+## Develop / run from source
 
 ```bash
 npm install
