@@ -2140,11 +2140,10 @@ export class CutForgeEditor {
     }
   }
 
-  private globalPointerUpBound = false
   private capturedPointerId: number | null = null
 
   private bindGlobalPointerUp() {
-    // Always (re)attach listeners — a stuck flag must never leave us deaf to mouseup
+    // Always (re)attach listeners — never leave us deaf to mouseup
     window.removeEventListener('pointerup', this.onGlobalPointerUp, true)
     window.removeEventListener('mouseup', this.onGlobalPointerUp, true)
     window.removeEventListener('blur', this.onGlobalPointerUp)
@@ -2153,7 +2152,6 @@ export class CutForgeEditor {
     window.addEventListener('mouseup', this.onGlobalPointerUp, true)
     window.addEventListener('blur', this.onGlobalPointerUp)
     document.addEventListener('visibilitychange', this.onVisibilityChange)
-    this.globalPointerUpBound = true
   }
 
   private unbindGlobalPointerUp() {
@@ -2161,7 +2159,6 @@ export class CutForgeEditor {
     window.removeEventListener('mouseup', this.onGlobalPointerUp, true)
     window.removeEventListener('blur', this.onGlobalPointerUp)
     document.removeEventListener('visibilitychange', this.onVisibilityChange)
-    this.globalPointerUpBound = false
   }
 
   private capturePointerFromEvent(e: paper.ToolEvent) {
