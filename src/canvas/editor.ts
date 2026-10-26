@@ -217,6 +217,7 @@ export class CutForgeEditor {
 
   destroy() {
     this.unbindGlobalPointerUp()
+    this.releasePointerCaptureSafe()
     this.endPointerGesture(true)
     this.canvas.removeEventListener('wheel', this.onWheel)
     this.canvas.removeEventListener('dblclick', this.onDblClick)
@@ -2094,14 +2095,25 @@ export class CutForgeEditor {
         this.mode = 'pan'
         this.panStart = e.point.clone()
         this.viewCenterStart = paper.view.center.clone()
+        this.capturePointerFromEvent(e)
         this.bindGlobalPointerUp()
         return
       }
       if (this.tool === 'select' || this.tool === 'shape') {
         this.onSelectDown(e)
+        this.capturePointerFromEvent(e)
         this.bindGlobalPointerUp()
       } else {
         this.onDrawDown(e)
+        // Capture for drag-draw tools so mouseup off-canvas still ends the gesture
+        if (
+          this.tool === 'rect' ||
+          this.tool === 'ellipse' ||
+          this.tool === 'line' ||
+          this.tool === 'freehand'
+        ) {
+          this.capturePointerFromEvent(e)
+        }
         this.bindGlobalPointerUp()
       }
     }
@@ -2113,8 +2125,14 @@ export class CutForgeEditor {
         this.notify()
         return
       }
-      if (this.tool === 'select' || this.tool === 'shape') this.onSelectDrag(e)
-      else this.onDrawDrag(e)
+      // Prefer draw drag while a draw gesture is active (even if tool flipped)
+      if (this.mode === 'draw' || this.currentPath) {
+        this.onDrawDrag(e)
+      } else if (this.tool === 'select' || this.tool === 'shape') {
+        this.onSelectDrag(e)
+      } else {
+        this.onDrawDrag(e)
+      }
     }
 
     this.paperTool.onMouseUp = (_e: paper.ToolEvent) => {
@@ -2123,23 +2141,56 @@ export class CutForgeEditor {
   }
 
   private globalPointerUpBound = false
+  private capturedPointerId: number | null = null
 
   private bindGlobalPointerUp() {
-    if (this.globalPointerUpBound) return
-    this.globalPointerUpBound = true
-    window.addEventListener('pointerup', this.onGlobalPointerUp, true)
-    window.addEventListener('mouseup', this.onGlobalPointerUp, true)
-    window.addEventListener('blur', this.onGlobalPointerUp)
-    document.addEventListener('visibilitychange', this.onVisibilityChange)
-  }
-
-  private unbindGlobalPointerUp() {
-    if (!this.globalPointerUpBound) return
-    this.globalPointerUpBound = false
+    // Always (re)attach listeners — a stuck flag must never leave us deaf to mouseup
     window.removeEventListener('pointerup', this.onGlobalPointerUp, true)
     window.removeEventListener('mouseup', this.onGlobalPointerUp, true)
     window.removeEventListener('blur', this.onGlobalPointerUp)
     document.removeEventListener('visibilitychange', this.onVisibilityChange)
+    window.addEventListener('pointerup', this.onGlobalPointerUp, true)
+    window.addEventListener('mouseup', this.onGlobalPointerUp, true)
+    window.addEventListener('blur', this.onGlobalPointerUp)
+    document.addEventListener('visibilitychange', this.onVisibilityChange)
+    this.globalPointerUpBound = true
+  }
+
+  private unbindGlobalPointerUp() {
+    window.removeEventListener('pointerup', this.onGlobalPointerUp, true)
+    window.removeEventListener('mouseup', this.onGlobalPointerUp, true)
+    window.removeEventListener('blur', this.onGlobalPointerUp)
+    document.removeEventListener('visibilitychange', this.onVisibilityChange)
+    this.globalPointerUpBound = false
+  }
+
+  private capturePointerFromEvent(e: paper.ToolEvent) {
+    try {
+      const ne = (e as paper.ToolEvent & { event?: Event }).event
+      if (
+        ne &&
+        'pointerId' in ne &&
+        typeof (ne as PointerEvent).pointerId === 'number'
+      ) {
+        const id = (ne as PointerEvent).pointerId
+        this.canvas.setPointerCapture(id)
+        this.capturedPointerId = id
+      }
+    } catch {
+      /* capture unsupported or already captured */
+    }
+  }
+
+  private releasePointerCaptureSafe() {
+    try {
+      const id = this.capturedPointerId
+      if (id != null && this.canvas.hasPointerCapture?.(id)) {
+        this.canvas.releasePointerCapture(id)
+      }
+    } catch {
+      /* */
+    }
+    this.capturedPointerId = null
   }
 
   private onGlobalPointerUp = () => {
@@ -2150,20 +2201,39 @@ export class CutForgeEditor {
     if (document.visibilityState === 'hidden') this.handlePointerUp()
   }
 
+  /** True while a drag-draw gesture still needs onDrawUp (even if tool flipped). */
+  private isDrawGestureActive(): boolean {
+    if (this.mode === 'draw' || this.preview || this.currentPath) return true
+    if (
+      this.dragStart &&
+      (this.tool === 'rect' ||
+        this.tool === 'ellipse' ||
+        this.tool === 'line' ||
+        this.tool === 'freehand')
+    ) {
+      return true
+    }
+    return false
+  }
+
   /** End marquee / move / draw / pan — safe to call multiple times. */
   private handlePointerUp() {
     this.unbindGlobalPointerUp()
+    this.releasePointerCaptureSafe()
     if (this.mode === 'pan') {
       this.mode = 'none'
       this.panStart = null
       this.viewCenterStart = null
       return
     }
+    // Prefer finishing an in-progress draw even if tool flipped to select/shape
+    // mid-gesture (e.g. React sync or a prior onDrawUp→setTool race).
+    if (this.isDrawGestureActive()) {
+      this.onDrawUp({} as paper.ToolEvent)
+      return
+    }
     if (this.tool === 'select' || this.tool === 'shape') {
       this.onSelectUp()
-    } else if (this.mode === 'draw' || this.dragStart || this.preview || this.currentPath) {
-      // Synthesize draw completion even if Paper missed mouseup off-canvas
-      this.onDrawUp({} as paper.ToolEvent)
     } else {
       this.endPointerGesture(false)
     }
@@ -2622,36 +2692,53 @@ export class CutForgeEditor {
   }
 
   private onDrawUp(_e: paper.ToolEvent) {
-    if (this.tool === 'freehand' && this.currentPath) {
+    // Idempotent: Paper mouseup + window pointerup may both arrive.
+    const hadGesture =
+      this.mode === 'draw' ||
+      !!this.preview ||
+      !!this.currentPath ||
+      !!this.dragStart
+    if (!hadGesture) return
+
+    if (this.currentPath) {
+      // Freehand (commit even if tool flipped mid-gesture)
       if (this.currentPath.segments.length > 2) this.currentPath.simplify(2.5)
       if (this.currentPath.segments.length >= 2) {
         if (this.gestureBefore) this.history.pushBefore(this.gestureBefore)
         this.dirty = true
-        this.selectItems([this.currentPath])
       } else {
         this.currentPath.remove()
       }
       this.currentPath = null
       this.gestureBefore = null
-      this.setTool('select')
+      // Stay on freehand — LightBurn-style continuous drawing
+      this.deselectAll()
     } else if (
       this.preview &&
-      (this.tool === 'rect' || this.tool === 'ellipse' || this.tool === 'line')
+      this.polygonPoints.length === 0 &&
+      (this.tool === 'rect' ||
+        this.tool === 'ellipse' ||
+        this.tool === 'line' ||
+        this.mode === 'draw')
     ) {
+      // Rect / ellipse / line preview → commit (or discard if tiny)
       if (this.preview.bounds.width < 1 && this.preview.bounds.height < 1) {
         this.preview.remove()
       } else {
         if (this.gestureBefore) this.history.pushBefore(this.gestureBefore)
         this.dirty = true
-        this.selectItems([this.preview])
+        // Leave committed path in doc; deselect so next drag starts a new shape
+        // (handles under a draw tool would steal hit-testing).
       }
       this.preview = null
       this.gestureBefore = null
-      this.setTool('select')
+      this.deselectAll()
     }
+    // polygon / text: only clear drag state; multi-click polygon keeps preview
     this.clearSmartGuides()
     this.mode = 'none'
     this.dragStart = null
+    this.notify()
   }
 
   private finishPolygon() {
